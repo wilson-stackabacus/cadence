@@ -1,4 +1,14 @@
 import Foundation
+import CryptoKit
+
+/// Same input → same UUID on every device (SHA-256 based, v5-style). Used for imported
+/// events so the Mac and the web never create two copies of one meeting.
+func stableUUID(_ key: String) -> UUID {
+    var b = Array(SHA256.hash(data: Data(key.utf8)).prefix(16))
+    b[6] = (b[6] & 0x0F) | 0x50
+    b[8] = (b[8] & 0x3F) | 0x80
+    return UUID(uuid: (b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]))
+}
 
 // MARK: - Date helpers
 
@@ -77,6 +87,7 @@ func countWords(_ text: String) -> Int {
 extension PlanTask {
     /// Whether this task has an occurrence on `day`.
     func occurs(on day: Date) -> Bool {
+        if archived == true { return false }
         let d = day.startOfDay
         let s = startDate.startOfDay
         guard d >= s else { return false }

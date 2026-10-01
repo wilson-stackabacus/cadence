@@ -75,6 +75,7 @@ export async function status(userId) {
 }
 
 export async function disconnect(userId) {
+  await stopChannels(userId).catch(() => {});
   const r = await db.execute({ sql: 'SELECT refresh_token FROM google_tokens WHERE user_id = ?', args: [userId] });
   if (r.rows[0]) {
     fetch('https://oauth2.googleapis.com/revoke', {
@@ -157,6 +158,94 @@ export async function events(userId, calendarIds, timeMin, timeMax) {
     } while (pageToken);
   }
   return out;
+}
+
+/** Events in a window plus raw IDs of events deleted/cancelled in Google (showDeleted tombstones). */
+export async function eventsWithCancelled(userId, calendarIds, timeMin, timeMax) {
+  const ids = calendarIds.length ? calendarIds : ['primary'];
+  const events = [], cancelled = [];
+  for (const calId of ids) {
+    let pageToken;
+    do {
+      const j = await api(userId, 'GET', `/calendars/${enc(calId)}/events`, {
+        query: { timeMin, timeMax, singleEvents: 'true', showDeleted: 'true', maxResults: '2500', ...(pageToken ? { pageToken } : {}) },
+      });
+      for (const e of j.items ?? []) {
+        if (e.status === 'cancelled') { cancelled.push(e.id); continue; }
+        if (e.start) events.push(shapeEvent(e, calId));
+      }
+      pageToken = j.nextPageToken;
+    } while (pageToken);
+  }
+  return { events, cancelled };
+}
+
+/** One event by ID, or null if it's gone/cancelled. */
+export async function eventById(userId, calendarId, eventId) {
+  try {
+    const e = await api(userId, 'GET', `/calendars/${enc(calendarId)}/events/${enc(eventId)}`);
+    return e.status === 'cancelled' || !e.start ? null : shapeEvent(e, calendarId);
+  } catch (err) {
+    if (/404|410|Not Found|deleted/i.test(err.message)) return null;
+    throw err;
+  }
+}
+
+function shapeEvent(e, calId) {
+  return {
+    id: `${calId}|${e.id}`, calendarID: calId, title: e.summary || '(No title)',
+    start: e.start.dateTime || e.start.date, end: e.end?.dateTime || e.end?.date,
+    isAllDay: Boolean(e.start.date), location: e.location ?? null, link: e.htmlLink ?? null,
+  };
+}
+
+// ---------- push notifications (watch channels) ----------
+const pushAddress = () => {
+  const base = process.env.PUBLIC_URL || '';
+  return base.startsWith('https://') ? `${base}/api/google/webhook` : null;
+};
+
+export async function stopChannels(userId) {
+  const r = await db.execute({ sql: 'SELECT * FROM google_channels WHERE user_id = ?', args: [userId] });
+  for (const ch of r.rows) {
+    await api(userId, 'POST', '/channels/stop', { body: { id: ch.channel_id, resourceId: ch.resource_id } }).catch(() => {});
+  }
+  await db.execute({ sql: 'DELETE FROM google_channels WHERE user_id = ?', args: [userId] });
+}
+
+/** (Re)subscribes to change notifications for the user's calendars. Returns how many are watched. */
+export async function watch(userId) {
+  const address = pushAddress();
+  if (!address) return 0;
+  const t = (await db.execute({ sql: 'SELECT calendar_ids FROM google_tokens WHERE user_id = ?', args: [userId] })).rows[0];
+  if (!t) return 0;
+  const ids = JSON.parse(t.calendar_ids || '[]');
+  await stopChannels(userId);
+  let n = 0;
+  for (const calId of ids.length ? ids : ['primary']) {
+    const channelId = randomBytes(16).toString('hex');
+    const token = randomBytes(24).toString('base64url');
+    const j = await api(userId, 'POST', `/calendars/${enc(calId)}/events/watch`, {
+      body: { id: channelId, type: 'web_hook', address, token, params: { ttl: '604800' } },
+    });
+    await db.execute({
+      sql: 'INSERT INTO google_channels (channel_id, user_id, calendar_id, resource_id, token, expiration) VALUES (?, ?, ?, ?, ?, ?)',
+      args: [channelId, userId, calId, j.resourceId ?? null, token, Number(j.expiration) || Date.now() + 6 * 86_400_000],
+    });
+    n++;
+  }
+  return n;
+}
+
+export async function setPreferences(userId, { calendars, timeZone }) {
+  await db.execute({
+    sql: 'UPDATE google_tokens SET calendar_ids = ?, time_zone = ? WHERE user_id = ?',
+    args: [JSON.stringify(Array.isArray(calendars) ? calendars.slice(0, 20) : []), String(timeZone || 'UTC').slice(0, 64), userId],
+  });
+}
+
+export async function channelFor(channelId) {
+  return (await db.execute({ sql: 'SELECT * FROM google_channels WHERE channel_id = ?', args: [channelId] })).rows[0] ?? null;
 }
 
 export async function freeBusy(userId, calendarIds, timeMin, timeMax) {

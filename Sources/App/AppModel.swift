@@ -36,6 +36,8 @@ final class AppModel: ObservableObject {
     let store: Store
     let google: GoogleCalendar
     let sync: SyncService
+    let calendly = CalendlyService()
+    private(set) lazy var importer = CalendarImporter(model: self)
     let notifier = Notifier.shared
     let windows = WindowManager()
     private(set) lazy var engine = ReminderEngine(model: self)
@@ -56,6 +58,8 @@ final class AppModel: ObservableObject {
         google.restore()
         engine.start()
         sync.start()
+        calendly.restore()
+        importer.start()
         #if DEBUG
         DebugDriver.prepare(self)
         #endif
@@ -133,6 +137,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
         let m = model ?? AppModel.shared
         return view.environmentObject(m).environmentObject(m.store).environmentObject(m.google)
             .environmentObject(m.engine).environmentObject(m.sync)
+            .environmentObject(m.calendly).environmentObject(m.importer)
     }
 
     func showMain() {

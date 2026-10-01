@@ -84,11 +84,14 @@ enum DebugDriver {
             }
             try? await Task.sleep(nanoseconds: 500_000_000)
             await waitIdle()
+            log.append("diag status=\(sync.status) lastSynced=\(String(describing: sync.lastSynced)) keychainToken=\(Keychain.string(account: "session-token") != nil)")
             log.append("afterPull tasks=\(model.store.tasks.count) reflections=\(model.store.reflections.count)")
             log.append("titles=" + model.store.tasks.map(\.title).sorted().joined(separator: ","))
             log.append("readDone=\(model.store.tasks.first { $0.title == "Read 20 pages" }?.completions.keys.sorted() ?? [])")
             log.append("reflection=\(model.store.reflections.first?.text.prefix(40) ?? "none")")
             log.append("minWords=\(model.store.settings.minReflectionWords)")
+            let imported = model.store.tasks.filter { $0.source != nil }
+            log.append("imported=" + imported.map { "\($0.title)[\($0.source ?? "")\($0.archived == true ? ",archived" : "")\($0.isSilent ? ",silent" : "")]" }.sorted().joined(separator: "; "))
             model.store.upsert(PlanTask(title: "Created on the Mac", startDate: Date().startOfDay, timeMinutes: 20 * 60))
             sync.sync()
             try? await Task.sleep(nanoseconds: 500_000_000)

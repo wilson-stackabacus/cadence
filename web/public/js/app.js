@@ -155,6 +155,10 @@ function crow(o, { compact = false, showDate = false, ctx = '' } = {}) {
   meta.push(o.start ? `<span>${ic('clock')}${M.fmtTime(o.start)}</span>` : compact ? '' : `<span>${ic('sun')}Any time</span>`);
   if (t.recurrence.frequency !== 'none' && !compact) meta.push(`<span>${ic('repeat')}${esc(M.recurrenceSummary(t.recurrence, t.startDate))}</span>`);
   if (o.overdue) meta.push('<span class="red"><b>Overdue</b></span>');
+  if (t.source === 'calendly') meta.push(`<span>${ic('people')}Calendly</span>`);
+  if (t.source === 'google') meta.push(`<span>${ic('cal')}Google</span>`);
+  if (M.isSilent(t)) meta.push(`<span title="No notifications">${ic('bell-off')}</span>`);
+  if (t.externalURL && !compact) meta.push(`<a href="${esc(t.externalURL)}" target="_blank" rel="noopener" title="Open meeting link">${ic('link')}</a>`);
   const hasRefl = o.done && store.reflectionFor(o);
   return `<div class="crow ${o.done ? 'done' : ''} ${ui.justDone.has(o.id) ? 'just-done' : ''}">
     <button class="checkbtn" style="${o.done ? `color:${color(t.color)}` : ''}" data-act="toggle" data-occ="${esc(o.id)}" data-ctx="${ctx}"
@@ -453,6 +457,12 @@ function bookingView() {
         <div class="small muted">Slots only account for your Cadence tasks, and bookings are saved as Cadence tasks without sending invites.</div></div>
         <a class="btn" href="#settings">Connect in Settings</a></div>` : ''}
       ${b.message ? `<div class="callout" style="background:${tint('#30d158', .12)}"><span class="big green">${ic('check')}</span><div class="grow">${esc(b.message)}</div></div>` : ''}
+      ${store.calendly.connected && store.calendly.eventTypes.length ? `<div><div class="section-title">${ic('link')}Your Calendly links</div>
+        <div class="small muted" style="margin:-4px 0 8px">Public links anyone can book from. Booked meetings land on your checklist automatically.</div>
+        <div class="card">${store.calendly.eventTypes.map(t => `<div class="crow"><span style="width:10px;height:10px;border-radius:50%;background:${esc(t.color || '#bf5af2')}"></span>
+          <div class="grow"><div class="title">${esc(t.name)}</div><div class="meta"><span>${t.minutes} min</span><span class="ellipsis">${esc(t.url)}</span></div></div>
+          <button class="btn sm" data-act="copy-text" data-text="${esc(t.url)}">${ic('copy')} Copy link</button>
+          <a class="btn sm icon" href="${esc(t.url)}" target="_blank" rel="noopener" title="Open">${ic('link')}</a></div>`).join('')}</div></div>` : ''}
       <div><div class="section-title">${ic('people')}Meeting type</div><div class="mtypes">${store.settings.meetingTypes.map(m => `
         <button class="mtype ${m.id === mt.id ? 'on' : ''}" data-act="pick-meeting" data-id="${m.id}"><b>${esc(m.name)}</b>
         <div class="small muted">${ic('clock')} ${m.minutes} min</div><div class="small muted">${esc(m.details)}</div></button>`).join('')}</div></div>
@@ -531,6 +541,23 @@ function settingsView() {
               ${(store.googleCalendarIDs.length ? store.googleCalendarIDs.includes(c.id) : c.primary) ? 'checked' : ''}>
               <span style="width:9px;height:9px;border-radius:50%;background:${c.colorHex || '#0a84ff'}"></span>${esc(c.summary)}</label>`).join('')}</div></div></div>` : ''}`
         : `<div class="srow"><div>Show your Google events here, get reminders for them, and book meetings that send invites.</div><a class="btn primary" href="/api/google/connect">Connect Google Calendar</a></div>`}
+    </div></div>
+
+    <div><h3>Calendly</h3><div class="card">
+      ${store.calendly.connected ? `<div class="srow"><div class="green">${ic('check')} Connected${store.calendly.name ? ` as ${esc(store.calendly.name)}` : ''}</div>
+          <div class="row"><button class="btn" data-act="calendly-refresh">${ic('refresh')} Refresh</button><button class="btn danger" data-act="calendly-disconnect">Disconnect</button></div></div>
+        ${store.calendly.schedulingUrl ? `<div class="srow"><span class="mono muted ellipsis">${esc(store.calendly.schedulingUrl)}</span><button class="btn" data-act="copy-text" data-text="${esc(store.calendly.schedulingUrl)}">${ic('copy')} Copy booking page link</button></div>` : ''}`
+      : `<div class="srow"><div class="small">In Calendly, open <b>Integrations › API &amp; Webhooks</b>, generate a <b>Personal Access Token</b>, and paste it here. Booked meetings show up on your checklist (without notifications), and your booking links appear on the Booking page.
+          <div style="margin-top:4px"><a href="https://calendly.com/integrations/api_webhooks" target="_blank" rel="noopener">Open Calendly API settings ${ic('link')}</a></div></div></div>
+        <form class="srow" data-form="calendly"><input class="input grow" name="token" type="password" placeholder="Personal Access Token" autocomplete="off" required>
+          <button class="btn primary" ${ui.calendlyBusy ? 'disabled' : ''}>${ui.calendlyBusy ? 'Connecting…' : 'Connect'}</button></form>`}
+    </div></div>
+
+    <div><h3>Calendar imports</h3><div class="card">
+      <div class="srow">${tog('autoImportCalendars', 'Import Google Calendar events and Calendly meetings onto my checklist', s.autoImportCalendars)}</div>
+      <div class="srow"><span>Import the next</span>${sel('importDaysAhead', [3, 7, 14, 21, 30, 60].map(n => [n, `${n} days`]), s.importDaysAhead)}</div>
+      <div class="srow"><div class="small muted grow">${ui.importSummary ? esc(ui.importSummary) : `Imported items never notify you — turn notifications on for any single one in its editor. Deleting one hides it for good. Google Calendar is re-checked every 2 minutes while this page is open${store.google.push ? ' and pushes changes instantly' : ''}; Calendly every 30 minutes.`}</div>
+        <button class="btn ${ui.importing ? 'busy' : ''}" data-act="import-now" ${ui.importing || !(store.google.connected || store.calendly.connected) ? 'disabled' : ''}>${ic('sync', ui.importing ? 'spinning' : '')} ${ui.importing ? 'Importing…' : 'Import now'}</button></div>
     </div></div>
 
     <div><h3>Booking availability</h3><div class="card">
@@ -724,10 +751,14 @@ function editorDialog(m) {
         <div class="small muted">${esc(M.recurrenceSummary(preview, M.parseKey(m.date)))}</div>` : ''}
     </div>
     <div class="fieldset"><div class="legend">Reminders</div>
+      <label class="check"><input type="checkbox" data-edit="notify" data-rerender ${d.channels.length ? 'checked' : ''}>
+        ${d.channels.length ? `${ic('bell')} Notify me about this task` : `${ic('bell-off')} No notifications — stays on the checklist quietly`}</label>
+      ${d.channels.length ? `
       <div class="checks">${BEFORE.map(offCheck).join('')}</div>
       ${m.hasTime ? `<div class="small" style="font-weight:600">During the task</div><div class="checks">${DURING.filter(o => -o < d.durationMinutes).map(offCheck).join('')}</div>` : ''}
       <div class="chans">${M.CHANNELS.map(([c, l, desc]) => `<label class="check" title="${esc(desc)}"><input type="checkbox" data-edit="channel" value="${c}" ${d.channels.includes(c) ? 'checked' : ''}>${l}</label>`).join('')}</div>
-      ${!m.hasTime ? `<div class="small muted">Tasks without a time remind at ${M.fmtTimeMinutes(store.settings.untimedReminderMinutes)} on the day.</div>` : ''}
+      ${!m.hasTime ? `<div class="small muted">Tasks without a time remind at ${M.fmtTimeMinutes(store.settings.untimedReminderMinutes)} on the day.</div>` : ''}` : ''}
+      ${d.source ? `<div class="small muted">Imported from ${d.source === 'calendly' ? 'Calendly' : 'Google Calendar'}. Its title and time update on each import.</div>` : ''}
     </div>
     <div class="fieldset"><div class="legend">Color</div><div class="swatches">${Object.entries(M.COLORS).map(([k, v]) => `<button type="button" class="swatch ${d.color === k ? 'on' : ''}" style="background:${v}" data-act="edit-color" data-color="${k}" title="${k}"></button>`).join('')}</div></div>
     ${store.google.connected && !d.googleEventID ? `<label class="check"><input type="checkbox" data-edit="addToGoogle" ${m.addToGoogle ? 'checked' : ''}>Also add to Google Calendar${r.frequency !== 'none' ? ' (with the repeat schedule)' : ''}</label>` : ''}
@@ -756,8 +787,11 @@ function readEditorInputs() {
   if (val('endMode')) m.endMode = val('endMode').value;
   if (val('endDate')?.value) m.endDate = val('endDate').value;
   if (val('endCount')) m.endCount = Math.min(999, Math.max(1, Number(val('endCount').value) || 1));
-  m.draft.reminderOffsets = [...root.querySelectorAll('[data-edit="offset"]:checked')].map(e => Number(e.value));
-  m.draft.channels = [...root.querySelectorAll('[data-edit="channel"]:checked')].map(e => e.value);
+  const notify = val('notify');
+  if (root.querySelector('[data-edit="offset"]')) m.draft.reminderOffsets = [...root.querySelectorAll('[data-edit="offset"]:checked')].map(e => Number(e.value));
+  if (notify && !notify.checked) m.draft.channels = [];
+  else if (root.querySelector('[data-edit="channel"]')) m.draft.channels = [...root.querySelectorAll('[data-edit="channel"]:checked')].map(e => e.value);
+  else if (notify?.checked) m.draft.channels = [...store.settings.defaultChannels];
   if (val('addToGoogle')) m.addToGoogle = val('addToGoogle').checked;
 }
 
@@ -772,7 +806,7 @@ async function saveEditor() {
   if (t.recurrence.frequency === 'weekly' && !t.recurrence.weekdays.length) t.recurrence.weekdays = [M.weekday(M.parseKey(m.date))];
   if (t.recurrence.frequency !== 'weekly') t.recurrence.weekdays = [];
   t.reminderOffsets = t.reminderOffsets.filter(o => o >= 0 || (t.timeMinutes != null && -o < t.durationMinutes));
-  if (!t.reminderOffsets.length && t.channels.length) t.reminderOffsets = [0];
+  if (!t.reminderOffsets.length) t.reminderOffsets = [0];
   store.upsertTask(t);
   if (!m.addToGoogle) { closeModal(); return; }
   m.saving = true; renderModal();
@@ -934,6 +968,10 @@ const actions = {
   'ask-notify': async () => { if ('Notification' in window) await Notification.requestPermission(); render(); },
   'test-reminder': () => reminders.deliver({ kind: 'test', title: 'Test reminder', body: 'This is how Cadence reminders will look.', tint: '#0a84ff' }, store.settings.defaultChannels),
   'google-refresh': () => store.refreshGoogle(),
+  'calendly-refresh': () => store.refreshCalendly(),
+  'calendly-disconnect': () => confirmThen('Disconnect Calendly?', 'Meetings already on your checklist stay; new ones won’t be imported.', 'Disconnect', () => store.disconnectCalendly()),
+  'import-now': () => runImport({ manual: true }),
+  'copy-text': el => { navigator.clipboard?.writeText(el.dataset.text); toast('Link copied', { icon: 'copy' }); },
   'google-disconnect': () => confirmThen('Disconnect Google Calendar?', 'Cadence will stop showing your Google events on the web.', 'Disconnect', () => store.disconnectGoogle()),
   'avail-day': el => {
     const w = Number(el.dataset.w), a = store.settings.availability;
@@ -1071,6 +1109,17 @@ document.addEventListener('submit', async e => {
     setTimeout(() => { ui.justDone.delete(o.id); }, 1200);
     toast(`Checked off ${o.task.title} · reflection saved`, { icon: 'check', tone: 'good' });
     if (form.dataset.ctx === 'checkin') { ui.modal.reflecting = null; renderModal(); render(); } else closeModal();
+  } else if (kind === 'calendly') {
+    const token = String(new FormData(form).get('token') || '').trim();
+    ui.calendlyBusy = true; render();
+    try {
+      await store.connectCalendly(token);
+      toast(`Calendly connected${store.calendly.name ? ` as ${store.calendly.name}` : ''}`, { icon: 'check', tone: 'good' });
+      runImport({ manual: true });
+    } catch (err) {
+      toast(err.message, { icon: 'alert', tone: 'bad' });
+    }
+    ui.calendlyBusy = false; render();
   } else if (kind === 'editor') {
     saveEditor();
   } else if (kind === 'booking') {
@@ -1114,6 +1163,77 @@ document.addEventListener('keydown', e => {
 
 // Keep "now" lines, greetings and day boundaries fresh.
 setInterval(() => { if (!ui.modal || ['checkin', 'detail'].includes(ui.modal.type)) render(); }, 60_000);
+
+// ---------- calendar imports (Google + Calendly → silent checklist items) ----------
+// IDs match the Mac app (stableUUID of "google:<event id>" / "calendly:<uri>"), so either device can import.
+async function runImport({ manual = false } = {}) {
+  if (ui.importing || !store.user) return;
+  const s = store.settings;
+  if (!manual && !s.autoImportCalendars) return;
+  if (!store.google.connected && !store.calendly.connected) {
+    if (manual) toast('Connect Google Calendar or Calendly first', { icon: 'alert', tone: 'bad' });
+    return;
+  }
+  ui.importing = true; render();
+  const from = M.startOfDay(new Date()), to = M.addDays(from, Math.max(1, s.importDaysAhead));
+  const parts = [];
+  const summary = (name, r) => `${name}: ${r.added} new, ${r.updated} updated, ${r.removed} removed`;
+  if (store.google.connected) {
+    try {
+      const { events, cancelled } = await store.googleImportWindow(from, to);
+      const items = await Promise.all(events.map(googleTask));
+      const archiveIds = new Set(await Promise.all(cancelled.map(id => M.stableUUID(`google:${id}`))));
+      // Imported earlier but no longer in the window: moved or deleted. Ask Google about each.
+      const seen = new Set([...items.map(i => i.id), ...archiveIds]);
+      const stale = [...store.tasks.values()].filter(t => t.source === 'google' && !t.archived && !Object.keys(t.completions || {}).length
+        && !seen.has(t.id) && new Date(t.startDate) >= from && new Date(t.startDate) < to && t.googleEventID).slice(0, 25);
+      for (const t of stale) {
+        const ev = await store.googleEvent(t.sourceCalendar || 'primary', t.googleEventID).catch(() => undefined);
+        if (ev) items.push(await googleTask(ev)); else if (ev === null) archiveIds.add(t.id);
+      }
+      parts.push(summary('Google', store.applyImport('google', items, from, to, { archiveMissing: false, archiveIds })));
+      store.refreshGoogleView();
+    } catch (e) { parts.push(`Google failed: ${e.message}`); }
+  }
+  if (store.calendly.connected && (manual || Date.now() - ui.lastCalendlyImport > 30 * 60_000)) {
+    ui.lastCalendlyImport = Date.now();
+    try {
+      const meetings = await store.calendlyMeetings(from, to);
+      const items = await Promise.all(meetings.map(async m => {
+        const st = new Date(m.start), en = new Date(m.end);
+        return M.newTask({
+          id: await M.stableUUID(`calendly:${m.uri}`), title: m.name + (m.invitees.length ? ` with ${m.invitees.join(', ')}` : ''),
+          notes: m.location || '', startDate: M.iso(M.startOfDay(st)), timeMinutes: M.minutesOf(st),
+          durationMinutes: Math.max(5, Math.floor((en - st) / 60_000)),
+          channels: [], color: 'purple', source: 'calendly', ...(m.joinURL ? { externalURL: m.joinURL } : {}),
+        });
+      }));
+      parts.push(summary('Calendly', store.applyImport('calendly', items, from, to)));
+    } catch (e) { parts.push(`Calendly failed: ${e.message}`); }
+  }
+  ui.importing = false;
+  ui.importSummary = `${parts.join(' · ')} — ${M.fmtTime(new Date())}`;
+  if (manual) toast(parts.join(' · '), { icon: parts.some(p => p.includes('failed')) ? 'alert' : 'check' });
+  render();
+}
+// Google is re-checked every 2 minutes and whenever you come back to the tab; Calendly every 30.
+ui.lastCalendlyImport = 0;
+setInterval(() => { if (!document.hidden) runImport(); }, 2 * 60_000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) runImport(); });
+
+/** A Google event as a silent checklist task — field-for-field the same as the Mac and server importers. */
+async function googleTask(e) {
+  const raw = e.id.slice(e.id.indexOf('|') + 1);
+  const st = e.isAllDay ? M.parseKey(e.start) : new Date(e.start);
+  const en = e.isAllDay ? M.parseKey(e.end) : new Date(e.end);
+  return M.newTask({
+    id: await M.stableUUID(`google:${raw}`), title: e.title, notes: e.location || '',
+    startDate: M.iso(M.startOfDay(st)), ...(e.isAllDay ? {} : { timeMinutes: M.minutesOf(st) }),
+    durationMinutes: e.isAllDay ? 30 : Math.max(5, Math.floor((en - st) / 60_000)),
+    channels: [], color: 'blue', source: 'google', googleEventID: raw, sourceCalendar: e.calendarID,
+    ...(e.link ? { externalURL: e.link } : {}),
+  });
+}
 
 // ---------- sync indicator ----------
 const syncUI = { manual: false, spinUntil: 0, flashUntil: 0 };
@@ -1200,4 +1320,5 @@ store.boot().then(() => {
   if (store.user) reminders.start();
   else store.subscribe(function startOnce() { if (store.user && !reminders.started) { reminders.started = true; reminders.start(); } });
   if (store.user) reminders.started = true;
+  setTimeout(() => runImport(), 4000);
 });

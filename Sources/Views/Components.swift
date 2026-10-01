@@ -161,6 +161,9 @@ struct ChecklistRow: View {
                             .lineLimit(1)
                     }
                     if occ.isOverdue { Text("Overdue").foregroundStyle(.red).fontWeight(.medium) }
+                    if occ.task.source == "calendly" { Label("Calendly", systemImage: "person.2") }
+                    if occ.task.source == "google" { Label("Google", systemImage: "calendar") }
+                    if occ.task.isSilent { Image(systemName: "bell.slash").help("No notifications") }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

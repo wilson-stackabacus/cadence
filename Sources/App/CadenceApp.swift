@@ -14,6 +14,8 @@ struct CadenceApp: App {
                 .environmentObject(AppModel.shared.google)
                 .environmentObject(AppModel.shared.engine)
                 .environmentObject(AppModel.shared.sync)
+                .environmentObject(AppModel.shared.calendly)
+                .environmentObject(AppModel.shared.importer)
         } label: {
             let remaining = store.remainingToday
             Image(systemName: remaining > 0 ? "checklist.unchecked" : "checklist.checked")

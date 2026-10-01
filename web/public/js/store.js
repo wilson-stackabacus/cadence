@@ -56,6 +56,7 @@ class Store {
       this.emit();
       await this.sync();
       this.refreshGoogle();
+      this.refreshCalendly();
     } catch (e) {
       if (e.status !== 401) this.syncState = { ...this.syncState, status: 'offline', error: e.message };
       this.user = null;
@@ -76,6 +77,7 @@ class Store {
     this.emit();
     await this.sync();
     this.refreshGoogle();
+    this.refreshCalendly();
   }
 
   async signOut() {
@@ -193,8 +195,35 @@ class Store {
   }
 
   deleteTask(id) {
+    const t = this.tasks.get(id);
+    // Imported items are archived (hidden) so the next import doesn't bring them back.
+    if (t?.source) { this.upsertTask({ ...t, archived: true }); return; }
     this.tasks.delete(id);
     this.#queue('task', id, null, true);
+  }
+
+  /** Create/refresh imported tasks for one source in [from, to); archive ones that vanished upstream. */
+  applyImport(source, items, from, to, { archiveMissing = true, archiveIds = new Set() } = {}) {
+    let added = 0, updated = 0, removed = 0;
+    const incoming = new Set(items.map(i => i.id));
+    const fields = ['title', 'notes', 'startDate', 'timeMinutes', 'durationMinutes', 'externalURL', 'googleEventID', 'sourceCalendar'];
+    for (const item of items) {
+      const cur = this.tasks.get(item.id);
+      if (!cur) { this.upsertTask(item); added++; continue; }
+      if (cur.archived) continue;
+      if (fields.some(f => (cur[f] ?? null) !== (item[f] ?? null))) {
+        const next = { ...cur };
+        for (const f of fields) { if (item[f] == null) delete next[f]; else next[f] = item[f]; }
+        this.upsertTask(next); updated++;
+      }
+    }
+    for (const t of [...this.tasks.values()]) {
+      if (t.source !== source || t.archived || Object.keys(t.completions || {}).length) continue;
+      const s = new Date(t.startDate);
+      const missing = archiveMissing && !incoming.has(t.id) && s >= M.startOfDay(from) && s < to;
+      if (missing || archiveIds.has(t.id)) { this.upsertTask({ ...t, archived: true }); removed++; }
+    }
+    return { added, updated, removed };
   }
 
   complete(occ, text) {
@@ -246,7 +275,7 @@ class Store {
   overdue() {
     const today = M.startOfDay(new Date());
     return [...this.tasks.values()]
-      .filter(t => t.recurrence.frequency === 'none' && M.startOfDay(t.startDate) < today && !Object.keys(t.completions || {}).length)
+      .filter(t => !t.archived && t.recurrence.frequency === 'none' && M.startOfDay(t.startDate) < today && !Object.keys(t.completions || {}).length)
       .map(t => M.makeOccurrence(t, t.startDate))
       .sort((a, b) => a.day - b.day);
   }
@@ -276,6 +305,7 @@ class Store {
         this.google.calendars = await api('/api/google/calendars').catch(() => []);
         this.google.events = new Map(); this.google.months = new Set();
         this.ensureGoogle(M.addDays(new Date(), -40), M.addDays(new Date(), 75));
+        this.watchGoogle();
       }
     } catch { /* not critical */ }
     this.emit();
@@ -289,6 +319,11 @@ class Store {
       this.google.loading.add(key);
       const q = new URLSearchParams({ from: M.iso(m), to: M.iso(M.addMonths(m, 1)), calendars: this.googleCalendarIDs.join(',') });
       api(`/api/google/events?${q}`).then(list => {
+        const end = M.addMonths(m, 1);
+        for (const [id, e] of this.google.events) {
+          const s = e.isAllDay ? M.parseKey(e.start) : new Date(e.start);
+          if (s >= m && s < end) this.google.events.delete(id);
+        }
         for (const e of list) this.google.events.set(e.id, e);
         this.google.months.add(key);
         this.emit();
@@ -308,6 +343,33 @@ class Store {
       .filter(ev => ev.startDate < e && ev.endDate > s)
       .sort((a, b) => (a.isAllDay === b.isAllDay ? a.startDate - b.startDate : a.isAllDay ? -1 : 1));
   }
+
+  // ---------- Calendly (through the server) ----------
+  calendly = { connected: false, name: null, schedulingUrl: null, eventTypes: [] };
+  async refreshCalendly() {
+    try {
+      this.calendly = { ...this.calendly, ...(await api('/api/calendly/status')) };
+      if (this.calendly.connected) this.calendly.eventTypes = await api('/api/calendly/event-types').catch(() => []);
+    } catch { /* not critical */ }
+    this.emit();
+  }
+  async connectCalendly(token) {
+    this.calendly = { ...this.calendly, ...(await api('/api/calendly/connect', { method: 'POST', body: { token } })) };
+    await this.refreshCalendly();
+  }
+  async disconnectCalendly() {
+    await api('/api/calendly/disconnect', { method: 'POST', body: {} });
+    this.calendly = { connected: false, name: null, schedulingUrl: null, eventTypes: [] };
+    this.emit();
+  }
+  calendlyMeetings = (from, to) => api(`/api/calendly/meetings?${new URLSearchParams({ from: M.iso(from), to: M.iso(to) })}`);
+  googleImportWindow = (from, to) => api(`/api/google/import-window?${new URLSearchParams({ from: M.iso(from), to: M.iso(to), calendars: this.googleCalendarIDs.join(',') })}`);
+  googleEvent = (calendar, id) => api(`/api/google/event?${new URLSearchParams({ calendar, id })}`).then(r => r.event);
+  /** Tell the server our calendars + time zone and (re)subscribe to Google push updates. */
+  watchGoogle = () => api('/api/google/watch', { method: 'POST', body: { calendars: this.googleCalendarIDs, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } })
+    .then(r => { this.google.push = r.push; this.emit(); }).catch(() => {});
+  /** Re-fetch the months already shown so edits in Google appear on the calendars too. */
+  refreshGoogleView() { this.google.months.clear(); this.ensureGoogle(M.addDays(new Date(), -40), M.addDays(new Date(), 75)); }
 
   disconnectGoogle = () => api('/api/google/disconnect', { method: 'POST', body: {} }).then(() => this.refreshGoogle());
   freeBusy = (from, to) => api('/api/google/freebusy', { method: 'POST', body: { from: M.iso(from), to: M.iso(to), calendars: this.googleCalendarIDs } });

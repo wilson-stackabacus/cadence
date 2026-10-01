@@ -8,6 +8,9 @@ struct SettingsView: View {
     @EnvironmentObject private var google: GoogleCalendar
     @EnvironmentObject private var engine: ReminderEngine
     @EnvironmentObject private var sync: SyncService
+    @EnvironmentObject private var calendly: CalendlyService
+    @EnvironmentObject private var importer: CalendarImporter
+    @State private var calendlyToken = ""
     @State private var syncUser = ""
     @State private var syncPassword = ""
 
@@ -25,6 +28,8 @@ struct SettingsView: View {
             reflectionSection
             startupSection
             googleSection
+            calendlySection
+            importSection
             availabilitySection
             meetingTypesSection
             dataSection
@@ -249,6 +254,66 @@ struct SettingsView: View {
             }
         } header: {
             Text("Google Calendar")
+        }
+    }
+
+    private var calendlySection: some View {
+        Section {
+            if calendly.isConnected {
+                HStack {
+                    Label("Connected" + (calendly.userName.map { " as \($0)" } ?? ""), systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Spacer()
+                    if calendly.isWorking { ProgressView().controlSize(.small) }
+                    Button("Refresh") { Task { await calendly.loadProfile() } }
+                    Button("Disconnect", role: .destructive) { calendly.disconnect() }
+                }
+                if let url = calendly.schedulingURL {
+                    HStack {
+                        Text(url.absoluteString).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                        Spacer()
+                        Button("Copy booking page link") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                        }
+                    }
+                }
+            } else {
+                Text("In Calendly, open **Integrations › API & Webhooks**, generate a **Personal Access Token**, and paste it here. Your booked meetings will show up on your checklist (without notifications), and your booking links appear on the Booking page.")
+                    .font(.callout)
+                Link("Open Calendly API settings", destination: URL(string: "https://calendly.com/integrations/api_webhooks")!)
+                HStack {
+                    SecureField("Personal Access Token", text: $calendlyToken)
+                    Button("Connect") { Task { await calendly.connect(token: calendlyToken); if calendly.isConnected { calendlyToken = ""; await importer.importNow() } } }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(calendlyToken.trimmingCharacters(in: .whitespaces).isEmpty || calendly.isWorking)
+                }
+            }
+            if let e = calendly.lastError { Text(e).font(.caption).foregroundStyle(.red) }
+        } header: {
+            Text("Calendly")
+        }
+    }
+
+    private var importSection: some View {
+        Section {
+            Toggle("Import Google Calendar events and Calendly meetings onto my checklist", isOn: $store.settings.autoImportCalendars)
+            Stepper("Import the next \(store.settings.importDaysAhead) days", value: $store.settings.importDaysAhead, in: 1...60)
+            HStack {
+                Button {
+                    Task { await importer.importNow() }
+                } label: {
+                    Label(importer.isImporting ? "Importing…" : "Import now", systemImage: "square.and.arrow.down")
+                }
+                .disabled(importer.isImporting || !(google.isConnected || calendly.isConnected))
+                if importer.isImporting { ProgressView().controlSize(.small) }
+                Spacer()
+                if let s = importer.lastSummary { Text(s).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+            }
+            Text("Imported items never notify you (you can turn notifications on for any single one in its editor). Deleting one hides it for good. Google Calendar is re-checked every 2 minutes (and when Cadence comes to the front), so edits, moves and deletions there show up here quickly; Calendly every 30 minutes.")
+                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            Text("Calendar imports")
         }
     }
 

@@ -71,6 +71,15 @@ async function migrate() {
        email TEXT
      )`,
   ], 'write');
+  // Later additions (ALTER fails harmlessly if the column already exists).
+  for (const sql of [
+    'ALTER TABLE google_tokens ADD COLUMN time_zone TEXT',
+    'ALTER TABLE google_tokens ADD COLUMN calendar_ids TEXT',
+    `CREATE TABLE IF NOT EXISTS google_channels (
+       channel_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+       calendar_id TEXT NOT NULL, resource_id TEXT, token TEXT NOT NULL, expiration INTEGER NOT NULL
+     )`,
+  ]) { await db.execute(sql).catch(() => {}); }
 }
 
 const KINDS = new Set(['task', 'reflection', 'settings']);

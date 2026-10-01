@@ -8,6 +8,17 @@
 export const iso = d => new Date(d).toISOString().replace(/\.\d{3}Z$/, 'Z');
 export const uuid = () => crypto.randomUUID().toUpperCase();
 
+/** Same key → same UUID as the Mac app's stableUUID (SHA-256, v5-style bits). Used for imported events. */
+export async function stableUUID(key) {
+  const b = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key))).slice(0, 16);
+  b[6] = (b[6] & 0x0f) | 0x50;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+export const isSilent = task => !(task.channels && task.channels.length);
+
 // ---------- dates ----------
 export const startOfDay = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
 export const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
@@ -95,6 +106,7 @@ function patternIndex(task, d, s) {
 }
 
 export function occurs(task, day) {
+  if (task.archived) return false;
   const d = startOfDay(day);
   const s = startOfDay(task.startDate);
   if (d < s) return false;
@@ -196,7 +208,8 @@ export const DEFAULT_SETTINGS = {
   checkInOnLaunch: true, checkInOnWake: true, checkInOnUnlock: true, checkInOnlyWhenIncomplete: false,
   checkInChannels: ['checkIn', 'sound'],
   defaultChannels: ['notification', 'banner'], untimedReminderMinutes: 540, bannerAutoDismissSeconds: 0,
-  minReflectionWords: 20, showGoogleEvents: true, googleEventReminderMinutes: 10,
+  minReflectionWords: 20, showGoogleEvents: true, googleEventReminderMinutes: 0,
+  autoImportCalendars: true, importDaysAhead: 14,
   availability: { weekdays: [2, 3, 4, 5, 6], startMinutes: 540, endMinutes: 1020, bufferMinutes: 10, minNoticeHours: 4, daysAhead: 14 },
   meetingTypes: [
     { id: 'A1B2C3D4-0000-4000-8000-000000000015', name: 'Quick chat', minutes: 15, details: 'A short check-in.', addMeetLink: true },

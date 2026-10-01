@@ -380,3 +380,5 @@ main.enter > * { animation: rise .26s cubic-bezier(.2, .8, .2, 1) both; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+.i.spinning { animation: spin .8s linear infinite; }

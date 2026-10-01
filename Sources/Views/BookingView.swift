@@ -7,6 +7,8 @@ struct BookingView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var store: Store
     @EnvironmentObject private var google: GoogleCalendar
+    @EnvironmentObject private var calendly: CalendlyService
+    @State private var copiedLink: String?
 
     struct Slot: Identifiable, Hashable {
         let start: Date
@@ -56,6 +58,33 @@ struct BookingView: View {
                             .padding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(RoundedRectangle(cornerRadius: 10).fill(Color.green.opacity(0.10)))
+                    }
+
+                    if calendly.isConnected && !calendly.eventTypes.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            SectionTitle(text: "Your Calendly links", symbol: "link")
+                            Text("Public links anyone can book from. Booked meetings land on your checklist automatically.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            ForEach(calendly.eventTypes) { t in
+                                HStack(spacing: 10) {
+                                    Circle().fill(t.color.flatMap(Color.init(hex:)) ?? .purple).frame(width: 10, height: 10)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(t.name).font(.callout.weight(.medium))
+                                        Text("\(t.minutes) min · \(t.url.absoluteString)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    }
+                                    Spacer()
+                                    Button(copiedLink == t.id ? "Copied" : "Copy link") {
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(t.url.absoluteString, forType: .string)
+                                        withAnimation { copiedLink = t.id }
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { withAnimation { if copiedLink == t.id { copiedLink = nil } } }
+                                    }
+                                    Link(destination: t.url) { Image(systemName: "arrow.up.right.square") }.help("Open")
+                                }
+                                .padding(10)
+                                .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
+                            }
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 8) {

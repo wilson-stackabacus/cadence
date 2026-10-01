@@ -248,7 +248,7 @@ final class Store: ObservableObject {
     /// One-off tasks from earlier days that were never checked off.
     func overdue(today: Date = Date()) -> [Occurrence] {
         let t = today.startOfDay
-        return tasks.filter { !$0.recurrence.isRepeating && $0.startDate.startOfDay < t && $0.completions.isEmpty }
+        return tasks.filter { $0.archived != true && !$0.recurrence.isRepeating && $0.startDate.startOfDay < t && $0.completions.isEmpty }
             .map { Occurrence(task: $0, day: $0.startDate.startOfDay) }
             .sorted { $0.day < $1.day }
     }
@@ -287,7 +287,44 @@ final class Store: ObservableObject {
         if let i = tasks.firstIndex(where: { $0.id == task.id }) { tasks[i] = task } else { tasks.append(task) }
     }
 
-    func delete(taskID: UUID) { tasks.removeAll { $0.id == taskID } }
+    /// Imported items are archived (hidden) so re-importing doesn't resurrect them.
+    func delete(taskID: UUID) {
+        if let i = tasks.firstIndex(where: { $0.id == taskID }), tasks[i].isImported {
+            tasks[i].archived = true
+        } else {
+            tasks.removeAll { $0.id == taskID }
+        }
+    }
+
+    /// Creates or refreshes imported tasks for one source within [from, to), and archives ones
+    /// that vanished upstream (cancelled meetings). Completions, skips and alert choices are kept.
+    @discardableResult
+    func applyImport(source: String, items: [PlanTask], from: Date, to: Date, archiveMissing: Bool = true,
+                     archiveIDs: Set<UUID> = []) -> (added: Int, updated: Int, removed: Int) {
+        var list = tasks
+        var added = 0, updated = 0, removed = 0
+        let incoming = Set(items.map(\.id))
+        for item in items {
+            if let i = list.firstIndex(where: { $0.id == item.id }) {
+                guard list[i].archived != true else { continue }
+                var t = list[i]
+                t.title = item.title; t.notes = item.notes; t.startDate = item.startDate
+                t.timeMinutes = item.timeMinutes; t.durationMinutes = item.durationMinutes
+                t.externalURL = item.externalURL; t.googleEventID = item.googleEventID
+                t.sourceCalendar = item.sourceCalendar ?? t.sourceCalendar
+                if t != list[i] { list[i] = t; updated += 1 }
+            } else {
+                list.append(item); added += 1
+            }
+        }
+        for i in list.indices where list[i].source == source && list[i].archived != true && list[i].completions.isEmpty {
+            let missing = archiveMissing && !incoming.contains(list[i].id)
+                && list[i].startDate >= from.startOfDay && list[i].startDate < to
+            if missing || archiveIDs.contains(list[i].id) { list[i].archived = true; removed += 1 }
+        }
+        if added + updated + removed > 0 { tasks = list }
+        return (added, updated, removed)
+    }
 
     /// Checking something off always goes through here, and always records a reflection.
     func complete(_ occ: Occurrence, reflection text: String) {

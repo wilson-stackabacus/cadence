@@ -105,6 +105,12 @@ struct TaskEditor: View {
                 }
 
                 Section {
+                    Toggle(isOn: Binding(get: { !task.channels.isEmpty },
+                                         set: { task.channels = $0 ? store.settings.defaultChannels : [] })) {
+                        Label(task.channels.isEmpty ? "No notifications — stays on the checklist quietly" : "Notify me about this task",
+                              systemImage: task.channels.isEmpty ? "bell.slash" : "bell")
+                    }
+                    if !task.channels.isEmpty {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), alignment: .leading)], alignment: .leading, spacing: 6) {
                         ForEach(Self.offsetChoices, id: \.self) { off in
                             Toggle(offsetString(off), isOn: setBinding($task.reminderOffsets, off))
@@ -121,10 +127,14 @@ struct TaskEditor: View {
                         }
                     }
                     ChannelToggles(channels: $task.channels)
+                    }
                 } header: {
                     Text("Reminders")
                 } footer: {
-                    if !hasTime {
+                    if task.isImported {
+                        Text("Imported from \(task.source == "calendly" ? "Calendly" : "Google Calendar"). Its title and time update on each import.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if !hasTime && !task.channels.isEmpty {
                         Text("Tasks without a time remind at \(timeString(minutes: store.settings.untimedReminderMinutes)) on the day (change in Settings).")
                             .font(.caption).foregroundStyle(.secondary)
                     }
@@ -221,7 +231,7 @@ struct TaskEditor: View {
         if t.recurrence.frequency != .weekly { t.recurrence.weekdays = [] }
         // "During" reminders only make sense inside a timed task's span.
         t.reminderOffsets = t.reminderOffsets.filter { $0 >= 0 || (t.timeMinutes != nil && -$0 < t.durationMinutes) }
-        if t.reminderOffsets.isEmpty && !t.channels.isEmpty { t.reminderOffsets = [0] }
+        if t.reminderOffsets.isEmpty { t.reminderOffsets = [0] }
         store.upsert(t)
 
         guard addToGoogle else { model.editingTask = nil; return }

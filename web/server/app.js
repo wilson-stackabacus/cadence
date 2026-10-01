@@ -3,6 +3,9 @@
 import { ready, sync, usingTurso } from './db.js';
 import * as auth from './auth.js';
 import * as google from './google.js';
+import * as calendly from './calendly.js';
+import { importGoogle } from './importer.js';
+import { db } from './db.js';
 
 const COOKIE = 'cadence_session';
 
@@ -159,6 +162,43 @@ async function route(req, res, url) {
     const ids = (url.searchParams.get('calendars') || '').split(',').filter(Boolean);
     return send(res, 200, await google.events(user.id, ids, url.searchParams.get('from'), url.searchParams.get('to')));
   }
+  if (p === '/api/google/import-window' && m === 'GET') {
+    const user = await requireUser(req);
+    const ids = (url.searchParams.get('calendars') || '').split(',').filter(Boolean);
+    return send(res, 200, await google.eventsWithCancelled(user.id, ids, url.searchParams.get('from'), url.searchParams.get('to')));
+  }
+  if (p === '/api/google/event' && m === 'GET') {
+    const user = await requireUser(req);
+    return send(res, 200, { event: await google.eventById(user.id, url.searchParams.get('calendar') || 'primary', url.searchParams.get('id')) });
+  }
+  // Client tells the server which calendars + time zone to use, then we subscribe to push updates.
+  if (p === '/api/google/watch' && m === 'POST') {
+    const user = await requireUser(req);
+    await google.setPreferences(user.id, await readJson(req));
+    let watched = 0, error = null;
+    try { watched = await google.watch(user.id); } catch (e) { error = e.message; }
+    return send(res, 200, { watched, push: watched > 0, error });
+  }
+  // Google calls this the moment a watched calendar changes.
+  if (p === '/api/google/webhook' && m === 'POST') {
+    const ch = await google.channelFor(String(req.headers['x-goog-channel-id'] || ''));
+    if (!ch || ch.token !== req.headers['x-goog-channel-token']) return send(res, 404, { error: 'Unknown channel' });
+    if (req.headers['x-goog-resource-state'] !== 'sync') await importGoogle(ch.user_id).catch(e => console.error('push import', e));
+    return send(res, 200, { ok: true });
+  }
+  // Daily (vercel.json cron): renew subscriptions before they expire and catch up imports.
+  if (p === '/api/cron/google' && m === 'GET') {
+    if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) throw new HttpError(401, 'Unauthorized');
+    const users = (await db.execute('SELECT user_id FROM google_tokens')).rows.map(r => r.user_id);
+    const soon = Date.now() + 2 * 86_400_000;
+    let renewed = 0, imported = 0;
+    for (const u of users) {
+      const ch = (await db.execute({ sql: 'SELECT MIN(expiration) AS e FROM google_channels WHERE user_id = ?', args: [u] })).rows[0];
+      if (!ch?.e || Number(ch.e) < soon) { try { if (await google.watch(u)) renewed++; } catch { /* token revoked etc. */ } }
+      try { await importGoogle(u); imported++; } catch { /* keep going */ }
+    }
+    return send(res, 200, { users: users.length, renewed, imported });
+  }
   if (p === '/api/google/freebusy' && m === 'POST') {
     const user = await requireUser(req);
     const b = await readJson(req);
@@ -167,6 +207,22 @@ async function route(req, res, url) {
   if (p === '/api/google/events' && m === 'POST') {
     const user = await requireUser(req);
     return send(res, 200, await google.createEvent(user.id, await readJson(req)));
+  }
+
+  // --- Calendly ---
+  if (p === '/api/calendly/status' && m === 'GET') return send(res, 200, await calendly.status((await requireUser(req)).id));
+  if (p === '/api/calendly/connect' && m === 'POST') {
+    const user = await requireUser(req);
+    return send(res, 200, await calendly.connect(user.id, (await readJson(req)).token));
+  }
+  if (p === '/api/calendly/disconnect' && m === 'POST') {
+    await calendly.disconnect((await requireUser(req)).id);
+    return send(res, 200, { ok: true });
+  }
+  if (p === '/api/calendly/event-types' && m === 'GET') return send(res, 200, await calendly.eventTypes((await requireUser(req)).id));
+  if (p === '/api/calendly/meetings' && m === 'GET') {
+    const user = await requireUser(req);
+    return send(res, 200, await calendly.meetings(user.id, url.searchParams.get('from'), url.searchParams.get('to')));
   }
 
   throw new HttpError(404, 'Not found');

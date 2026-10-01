@@ -181,6 +181,18 @@ struct PlanTask: Codable, Identifiable, Hashable {
     var createdAt = Date()
     /// Last local or synced edit; drives last-writer-wins sync. nil for data created before sync existed.
     var updatedAt: Date?
+    /// "google" / "calendly" for imported items; nil for tasks made in Cadence.
+    var source: String?
+    /// Link back to the original event (Google Calendar page, Calendly meeting link).
+    var externalURL: String?
+    /// Google calendar the event came from, so any device can re-check it by ID.
+    var sourceCalendar: String?
+    /// Imported items are hidden instead of deleted, so the next import doesn't bring them back.
+    var archived: Bool?
+
+    /// No channels = a silent task: it stays on the checklist but never pings.
+    var isSilent: Bool { channels.isEmpty }
+    var isImported: Bool { source != nil }
 }
 
 /// One concrete instance of a (possibly repeating) task on a given day.
@@ -264,7 +276,11 @@ struct AppSettings: Codable {
     var googleClientSecret = ""
     var googleCalendarIDs: [String] = []
     var showGoogleEvents = true
-    var googleEventReminderMinutes = 10
+    var googleEventReminderMinutes = 0   // imported/calendar events don't ping by default
+
+    // Calendar imports (Google Calendar events + Calendly meetings become silent checklist items)
+    var autoImportCalendars = true
+    var importDaysAhead = 14
 
     // Booking
     var availability = Availability()
@@ -296,6 +312,8 @@ struct AppSettings: Codable {
         googleEventReminderMinutes = c.value(.googleEventReminderMinutes, d.googleEventReminderMinutes)
         availability = c.value(.availability, d.availability)
         meetingTypes = c.value(.meetingTypes, d.meetingTypes)
+        autoImportCalendars = c.value(.autoImportCalendars, d.autoImportCalendars)
+        importDaysAhead = c.value(.importDaysAhead, d.importDaysAhead)
     }
 }
 
@@ -319,6 +337,8 @@ struct SyncedSettings: Codable, Equatable {
     var googleEventReminderMinutes: Int
     var availability: Availability
     var meetingTypes: [MeetingType]
+    var autoImportCalendars: Bool
+    var importDaysAhead: Int
 
     init(_ s: AppSettings) {
         nudgeEnabled = s.nudgeEnabled; nudgeIntervalMinutes = s.nudgeIntervalMinutes
@@ -329,6 +349,7 @@ struct SyncedSettings: Codable, Equatable {
         bannerAutoDismissSeconds = s.bannerAutoDismissSeconds; minReflectionWords = s.minReflectionWords
         showGoogleEvents = s.showGoogleEvents; googleEventReminderMinutes = s.googleEventReminderMinutes
         availability = s.availability; meetingTypes = s.meetingTypes
+        autoImportCalendars = s.autoImportCalendars; importDaysAhead = s.importDaysAhead
     }
 
     init(from decoder: Decoder) throws {
@@ -351,6 +372,8 @@ struct SyncedSettings: Codable, Equatable {
         googleEventReminderMinutes = c.value(.googleEventReminderMinutes, googleEventReminderMinutes)
         availability = c.value(.availability, availability)
         meetingTypes = c.value(.meetingTypes, meetingTypes)
+        autoImportCalendars = c.value(.autoImportCalendars, autoImportCalendars)
+        importDaysAhead = c.value(.importDaysAhead, importDaysAhead)
     }
 
     func apply(to s: inout AppSettings) {
@@ -362,6 +385,7 @@ struct SyncedSettings: Codable, Equatable {
         s.bannerAutoDismissSeconds = bannerAutoDismissSeconds; s.minReflectionWords = minReflectionWords
         s.showGoogleEvents = showGoogleEvents; s.googleEventReminderMinutes = googleEventReminderMinutes
         s.availability = availability; s.meetingTypes = meetingTypes
+        s.autoImportCalendars = autoImportCalendars; s.importDaysAhead = importDaysAhead
     }
 }
 

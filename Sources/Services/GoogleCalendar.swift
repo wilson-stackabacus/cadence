@@ -202,6 +202,7 @@ final class GoogleCalendar: ObservableObject {
         defer { loadingMonths.remove(key) }
         let end = month.adding(months: 1)
         let colorFor = Dictionary(calendars.map { ($0.id, $0.colorHex) }, uniquingKeysWith: { a, _ in a })
+        var fresh: [String: GoogleEvent] = [:]
         do {
             for calID in selectedCalendarIDs {
                 var pageToken: String?
@@ -217,14 +218,67 @@ final class GoogleCalendar: ObservableObject {
                     let json = try await api("GET", "/calendars/\(Self.encode(calID))/events", query: q)
                     let color = colorFor[calID] ?? (calID == "primary" ? calendars.first(where: \.primary)?.colorHex : nil)
                     for item in json["items"] as? [[String: Any]] ?? [] {
-                        if let ev = Self.parseEvent(item, calendarID: calID, colorHex: color) { events[ev.id] = ev }
+                        if let ev = Self.parseEvent(item, calendarID: calID, colorHex: color) { fresh[ev.id] = ev }
                     }
                     pageToken = json["nextPageToken"] as? String
                 } while pageToken != nil
             }
+            // Swap this month's events in one go: picks up edits and deletions without flicker.
+            var merged = events.filter { !($0.value.start >= month && $0.value.start < end) }
+            merged.merge(fresh) { _, new in new }
+            events = merged
             loadedMonths.insert(key)
         } catch {
             lastError = error.localizedDescription
+        }
+    }
+
+    /// Re-fetches every month already on screen (called on the import cycle).
+    func refreshLoadedMonths() {
+        guard isConnected else { return }
+        for key in loadedMonths where !loadingMonths.contains(key) {
+            guard let month = DateKey.date(key) else { continue }
+            loadingMonths.insert(key)
+            Task { await loadMonth(month, key: key) }
+        }
+    }
+
+    /// Fetches events in a range straight from Google (used by the importer), plus the raw IDs of
+    /// events deleted/cancelled there (Google returns them as tombstones with showDeleted=true).
+    func fetchEvents(from: Date, to: Date) async throws -> (events: [GoogleEvent], cancelled: [String]) {
+        let colorFor = Dictionary(calendars.map { ($0.id, $0.colorHex) }, uniquingKeysWith: { a, _ in a })
+        var out: [GoogleEvent] = []
+        var cancelled: [String] = []
+        for calID in selectedCalendarIDs {
+            var pageToken: String?
+            repeat {
+                var q = [
+                    URLQueryItem(name: "timeMin", value: Self.iso.string(from: from)),
+                    URLQueryItem(name: "timeMax", value: Self.iso.string(from: to)),
+                    URLQueryItem(name: "singleEvents", value: "true"),
+                    URLQueryItem(name: "orderBy", value: "startTime"),
+                    URLQueryItem(name: "maxResults", value: "2500"),
+                    URLQueryItem(name: "showDeleted", value: "true"),
+                ]
+                if let pageToken { q.append(URLQueryItem(name: "pageToken", value: pageToken)) }
+                let json = try await api("GET", "/calendars/\(Self.encode(calID))/events", query: q)
+                for item in json["items"] as? [[String: Any]] ?? [] {
+                    if (item["status"] as? String) == "cancelled", let id = item["id"] as? String { cancelled.append(id); continue }
+                    if let ev = Self.parseEvent(item, calendarID: calID, colorHex: colorFor[calID] ?? nil) { out.append(ev) }
+                }
+                pageToken = json["nextPageToken"] as? String
+            } while pageToken != nil
+        }
+        return (out, cancelled)
+    }
+
+    /// One event by ID; nil if it was deleted or cancelled.
+    func fetchEvent(calendarID: String, eventID: String) async throws -> GoogleEvent? {
+        do {
+            let json = try await api("GET", "/calendars/\(Self.encode(calendarID))/events/\(Self.encode(eventID))")
+            return Self.parseEvent(json, calendarID: calendarID, colorHex: nil)
+        } catch GoogleError.http(let code, _) where code == 404 || code == 410 {
+            return nil
         }
     }
 
