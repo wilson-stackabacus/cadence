@@ -30,7 +30,7 @@ to-do list, 20-word reflections, booking, reminders and check-ins — and it **s
    npx vercel env add TURSO_AUTH_TOKEN production
    npx vercel deploy --prod
    ```
-   (Or push the repo to GitHub and import it in the Vercel dashboard with **Root Directory = `cadence/web`**,
+   (Or push the repo to GitHub and import it in the Vercel dashboard with **Root Directory = `web`**,
    then add the two environment variables under Settings › Environment Variables.)
 3. Open the URL Vercel prints (e.g. `https://cadence-xyz.vercel.app`) and create your account.
 
