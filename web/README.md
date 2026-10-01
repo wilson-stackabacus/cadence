@@ -44,6 +44,22 @@ In Google Cloud Console (Calendar API enabled), create an OAuth client of type *
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PUBLIC_URL=https://<your-app>.vercel.app` and redeploy.
 (The Mac app keeps using its own Desktop client.)
 
+### 5. (Optional) Calendly
+Nothing to configure on the server. Each user pastes a Calendly **Personal Access Token**
+(Calendly › Integrations › API & Webhooks) in Settings › Calendly.
+
+## Calendar imports
+Google Calendar events and Calendly meetings become **silent** checklist items (no notifications;
+switch any single one on in its editor). IDs are derived from the event (`stableUUID("google:<id>")`,
+`stableUUID("calendly:<uri>")`) identically on Mac, web and server, so nothing is ever imported twice.
+Deleting an imported item hides it permanently; cancelled/moved events update or disappear.
+
+- **Polling:** Mac and web re-check Google every 2 minutes (plus on wake/focus), Calendly every 30.
+- **Push (instant):** with Google configured on the server (step 4) and `PUBLIC_URL` set, the server
+  subscribes to Google change notifications; `/api/google/webhook` imports changes into Turso right
+  away, and devices pick them up on their next sync. A daily Vercel cron (`/api/cron/google`, protected
+  by `CRON_SECRET`) renews the subscriptions, which Google expires after ~7 days.
+
 ## How sync works
 Every task, reflection and the shared settings are one row in Turso with the client's edit time.
 Clients push changes and pull everything newer than their cursor; on conflict the most recent edit wins.
