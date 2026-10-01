@@ -308,3 +308,75 @@ main { overflow: auto; min-width: 0; }
   .week-head .dow { font-size: 9px; }
   .block { font-size: 10px; padding-left: 4px; }
 }
+
+/* =====================================================================
+   Motion & feedback
+   ===================================================================== */
+.btn, .checkbtn, .nav-item, .mtype, .swatch, .wd button, .slot { transition: transform .12s ease, background-color .15s, border-color .15s, box-shadow .15s, color .15s; }
+.btn:active:not(:disabled), .wd button:active, .swatch:active { transform: scale(.96); }
+.mtype:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0, 0, 0, .12); }
+.checkbtn:hover { color: var(--accent); transform: scale(1.12); }
+.crow { transition: background-color .3s; border-radius: 8px; }
+.crow .title { transition: color .3s; }
+
+/* Screen change: content rises in */
+main.enter > * { animation: rise .26s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+
+/* Dialogs pop open (only when first opened, not on every edit) */
+.overlay.opening .dialog { animation: popin .2s cubic-bezier(.2, .9, .3, 1.2) both; }
+@keyframes popin { from { opacity: 0; transform: scale(.95) translateY(6px); } }
+
+/* Checking something off */
+.just-done { animation: donebg 1.2s ease-out; }
+.just-done .checkbtn { animation: checkpop .45s cubic-bezier(.2, .9, .3, 1.5); }
+@keyframes checkpop { 0% { transform: scale(.6); } 60% { transform: scale(1.3); } 100% { transform: scale(1); } }
+@keyframes donebg { 0% { background: color-mix(in srgb, var(--green) 22%, transparent); } 100% { background: transparent; } }
+
+/* Progress rings glide between values */
+.ring-arc { transition: stroke-dashoffset .7s cubic-bezier(.2, .8, .2, 1); }
+
+/* Banners leave instead of vanishing */
+.banner.leaving, .toast.leaving { animation: leave .2s ease-in forwards; }
+@keyframes leave { to { opacity: 0; transform: translateY(-6px) scale(.98); } }
+
+/* Sync control */
+.syncbtn {
+  display: flex; align-items: center; gap: 6px; width: 100%; margin-top: 4px; padding: 4px 6px;
+  border: 0; background: transparent; border-radius: 7px; cursor: pointer; color: var(--muted); font-size: 11.5px; text-align: left;
+}
+.syncbtn:hover { background: var(--line); color: var(--text); }
+.syncbtn.big { width: auto; padding: 6px 12px; font-size: 13px; border: 1px solid var(--line-strong); background: var(--raised); color: var(--text); }
+.syncbtn .sync-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sync-icon { position: relative; width: 14px; height: 14px; flex: none; display: inline-grid; place-items: center; }
+.sync-icon .i { position: absolute; inset: 0; width: 14px; height: 14px; transition: opacity .2s, transform .3s; }
+.sync-icon .done { opacity: 0; transform: scale(.5); color: var(--green); }
+.syncbtn.syncing .spin { animation: spin .8s linear infinite; color: var(--accent); }
+.syncbtn.syncing { color: var(--text); }
+.syncbtn.flash .spin { opacity: 0; transform: scale(.5); }
+.syncbtn.flash .done { opacity: 1; transform: scale(1); }
+.syncbtn.flash { color: var(--green); }
+.syncbtn.offline .spin { color: var(--red); }
+.syncbtn.offline { color: var(--red); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Toasts */
+#toasts { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 70; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+.toast {
+  pointer-events: auto; display: flex; align-items: center; gap: 10px; min-width: 260px; max-width: min(460px, calc(100vw - 32px));
+  padding: 9px 10px 9px 14px; border-radius: 12px; background: #2c2c2e; color: #f5f5f7; box-shadow: var(--shadow);
+  font-size: 13px; animation: toastin .25s cubic-bezier(.2, .9, .3, 1.2);
+}
+.toast .btn { background: rgba(255, 255, 255, .12); border-color: transparent; color: #fff; }
+.toast.good > .i { color: #30d158; }
+.toast.bad > .i { color: #ff453a; }
+@keyframes toastin { from { opacity: 0; transform: translateY(10px) scale(.97); } }
+@media (prefers-color-scheme: light) { .toast { background: #1d1d1f; } }
+
+/* Quick add field lights up when focused */
+.quickadd { transition: border-color .15s, box-shadow .15s; }
+.quickadd:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

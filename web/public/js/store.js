@@ -32,6 +32,8 @@ class Store {
   syncState = { status: 'idle', lastSynced: null, error: null };
   google = { configured: false, connected: false, email: null, calendars: [], events: new Map(), months: new Set(), loading: new Set() };
   #listeners = new Set();
+  #syncListeners = new Set();
+  syncing = false;
   #pushTimer = null;
   #syncing = null;
 
@@ -41,6 +43,9 @@ class Store {
 
   subscribe(fn) { this.#listeners.add(fn); return () => this.#listeners.delete(fn); }
   emit() { for (const fn of this.#listeners) fn(); }
+  /** Lightweight channel for the sync indicator, so it can animate without re-rendering the page. */
+  onSync(fn) { this.#syncListeners.add(fn); return () => this.#syncListeners.delete(fn); }
+  #notifySync() { for (const fn of this.#syncListeners) fn(); }
 
   // ---------- auth ----------
   async boot() {
@@ -136,6 +141,8 @@ class Store {
     const sent = [...this.pending.values()];
     const before = this.syncState.status;
     let changed = false;
+    this.syncing = true;
+    this.#notifySync();
     try {
       const res = await api('/api/sync', { method: 'POST', body: { since: this.cursor, changes: sent } });
       // Only clear what we sent and haven't edited again since.
@@ -150,6 +157,8 @@ class Store {
       if (e.status === 401) { this.user = null; this.emit(); return; }
       this.syncState = { ...this.syncState, status: 'offline', error: navigator.onLine ? e.message : 'Offline — changes will sync later' };
     }
+    this.syncing = false;
+    this.#notifySync();
     this.#saveCache();
     // Only re-render when something visible changed; a quiet poll shouldn't rebuild the page.
     if (changed || before !== this.syncState.status) this.emit();
@@ -210,6 +219,13 @@ class Store {
   skip(occ) {
     const t = this.tasks.get(occ.task.id);
     if (t) this.upsertTask({ ...t, skipped: [...new Set([...(t.skipped || []), occ.key])] });
+  }
+
+  /** Put back a deleted task/reflection (Undo). A fresh edit time makes it win over the deletion everywhere. */
+  restoreTask(task) { this.upsertTask(task); }
+  restoreReflection(r) {
+    this.reflections.set(r.id, r);
+    this.#queue('reflection', r.id, r);
   }
 
   deleteReflection(id) {

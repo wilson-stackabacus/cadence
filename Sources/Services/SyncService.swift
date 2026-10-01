@@ -17,6 +17,10 @@ final class SyncService: ObservableObject {
     @Published private(set) var status: Status = .signedOut
     @Published private(set) var lastSynced: Date?
     @Published private(set) var isSigningIn = false
+    /// True briefly after a sync the user can see (button press or local edits pushed): shows a check mark.
+    @Published private(set) var justSynced = false
+    /// Spinner visibility: stays on long enough to notice even when the request takes 100 ms.
+    @Published private(set) var showSpinner = false
 
     private unowned let store: Store
     private var timer: Timer?
@@ -123,16 +127,33 @@ final class SyncService: ObservableObject {
 
     // MARK: Sync
 
-    func sync() {
+    func sync(manual: Bool = false) {
         guard isSignedIn, running == nil else { return }
-        running = Task { await syncNow(); running = nil }
+        running = Task { await syncNow(manual: manual); running = nil }
     }
 
-    private func syncNow() async {
+    private func syncNow(manual: Bool) async {
         guard let base = baseURL, let token = Keychain.string(account: Keys.token) else { return }
         status = .syncing
         let pushStarted = Date()
         let changes = store.pendingChanges(since: lastPushed)
+        // Quiet background polls don't animate; anything the user caused does, for at least ~0.7 s.
+        let visible = manual || !changes.isEmpty
+        if visible { showSpinner = true; justSynced = false }
+        defer {
+            if visible {
+                Task { @MainActor in
+                    let elapsed = Date().timeIntervalSince(pushStarted)
+                    if elapsed < 0.75 { try? await Task.sleep(nanoseconds: UInt64((0.75 - elapsed) * 1_000_000_000)) }
+                    self.showSpinner = false
+                    if self.status == .idle {
+                        self.justSynced = true
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        self.justSynced = false
+                    }
+                }
+            }
+        }
         let body: [String: Any] = [
             "since": cursor,
             "changes": changes.map { c -> [String: Any] in

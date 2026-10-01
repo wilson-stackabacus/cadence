@@ -30,7 +30,12 @@ const ui = {
   auth: { mode: 'login', error: null, busy: false },
   flash: null,
   weekScrolled: false,
+  justDone: new Set(),     // occurrence ids that were just checked off (pop animation)
+  lastRoute: null,
+  modalFresh: false,
 };
+
+const ringPrev = new Map(); // ring key -> last drawn fraction, so rings animate between values
 
 const reminders = new Reminders({
   banner: content => showBanner(content),
@@ -80,7 +85,11 @@ function render() {
   const scroll = $('#main')?.scrollTop ?? 0;
   const weekScroll = $('#weekScroll')?.scrollTop;
 
-  app.innerHTML = `<div class="shell">${sidebar()}<main id="main">${view()}</main></div>`;
+  const routeChanged = ui.lastRoute !== ui.route;
+  ui.lastRoute = ui.route;
+  app.innerHTML = `<div class="shell">${sidebar()}<main id="main" class="${routeChanged ? 'enter' : ''}">${view()}</main></div>`;
+  updateSyncUI();
+  animateRings();
 
   if (ui.route !== 'week') $('#main').scrollTop = scroll;
   const ws = $('#weekScroll');
@@ -99,19 +108,17 @@ function sidebar() {
     let head = '';
     if (section !== lastSection) { head = section ? `<div class="nav-section">${section}</div>` : '<div class="nav-section"></div>'; lastSection = section; }
     const badge = id === 'today' ? store.remainingToday() : id === 'reflections' ? store.reflections.size : '';
-    return `${head}<a class="nav-item ${ui.route === id ? 'on' : ''}" href="#${id}">${ic(icon)}<span class="lbl">${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
+    return `${head}<a class="nav-item ${ui.route === id ? 'on' : ''}" href="#${id}" title="${label} (${SHORTCUT_FOR[id]})">${ic(icon)}<span class="lbl">${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
   }).join('');
-  const s = store.syncState;
-  const syncText = s.status === 'synced' ? `Synced ${M.fmtTime(s.lastSynced)}` : s.status === 'syncing' ? 'Syncing…' : s.status === 'offline' ? (s.error || 'Offline') : 'Not synced yet';
   return `<nav class="sidebar">
     <div class="brand"><img src="/icon-192.png" alt=""><span>Cadence</span></div>
     ${items}
     <div class="spacer"></div>
-    <button class="btn primary" data-act="new-task">${ic('plus')} New Task</button>
+    <button class="btn primary" data-act="new-task" title="New task (N)">${ic('plus')} New Task</button>
     <div class="account">
       <div class="row"><b class="grow ellipsis">${esc(store.user.username)}</b>
         <button class="btn ghost sm icon" data-act="sign-out" title="Sign out">${ic('logout')}</button></div>
-      <div class="row muted tiny"><span class="sync-dot ${s.status}"></span><span class="ellipsis" title="${esc(syncText)}">${esc(syncText)}${store.pending.size ? ` · ${store.pending.size} pending` : ''}</span></div>
+      ${syncControl()}
     </div>
   </nav>`;
 }
@@ -129,13 +136,15 @@ function view() {
 }
 
 // ---------- shared bits ----------
-function ring(done, total, size = 72, width = 8) {
+function ring(done, total, size = 72, width = 8, key = `ring${size}`) {
   const r = (size - width) / 2, c = 2 * Math.PI * r;
   const f = total ? done / total : 1;
+  const from = ringPrev.has(key) ? ringPrev.get(key) : f;
+  ringPrev.set(key, f);
   return `<div class="ring" style="width:${size}px;height:${size}px">
     <svg width="${size}" height="${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--line-strong)" stroke-width="${width}"/>
     <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${f >= 1 ? 'var(--green)' : 'var(--accent)'}" stroke-width="${width}" stroke-linecap="round"
-      stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - f)}" style="transition:stroke-dashoffset .4s"/></svg>
+      stroke-dasharray="${c}" class="ring-arc" style="stroke-dashoffset:${c * (1 - from)}" data-to="${c * (1 - f)}"/></svg>
     ${size >= 44 ? `<div class="lbl" style="font-size:${size * 0.24}px">${total ? `${done}/${total}` : '–'}</div>` : ''}</div>`;
 }
 
@@ -147,7 +156,7 @@ function crow(o, { compact = false, showDate = false, ctx = '' } = {}) {
   if (t.recurrence.frequency !== 'none' && !compact) meta.push(`<span>${ic('repeat')}${esc(M.recurrenceSummary(t.recurrence, t.startDate))}</span>`);
   if (o.overdue) meta.push('<span class="red"><b>Overdue</b></span>');
   const hasRefl = o.done && store.reflectionFor(o);
-  return `<div class="crow ${o.done ? 'done' : ''}">
+  return `<div class="crow ${o.done ? 'done' : ''} ${ui.justDone.has(o.id) ? 'just-done' : ''}">
     <button class="checkbtn" style="${o.done ? `color:${color(t.color)}` : ''}" data-act="toggle" data-occ="${esc(o.id)}" data-ctx="${ctx}"
       title="${o.done ? 'Mark as not done' : 'Complete — you’ll write a short reflection first'}">${ic(o.done ? 'checked' : 'circle')}</button>
     ${compact ? '' : `<span class="bar" style="background:${color(t.color)}"></span>`}
@@ -466,13 +475,12 @@ function settingsView() {
   const chans = key => `<div class="chans">${M.CHANNELS.map(([c, l, d]) => `<label class="check" title="${esc(d)}"><input type="checkbox" data-setting-set="${key}" value="${c}" ${s[key].includes(c) ? 'checked' : ''}>${l}</label>`).join('')}</div>`;
   const times = (from, to) => { const o = []; for (let m = from; m <= to; m += 30) o.push([m, M.fmtTimeMinutes(m)]); return o; };
   const a = s.availability;
-  const ss = store.syncState;
   return `<div class="header"><div class="grow"><h1>Settings</h1><div class="sub">Settings marked “this device” stay on this browser; everything else syncs with the Mac app.</div></div></div>
   <div class="page settings">
     ${ui.flash ? `<div class="callout"><span class="big">${ic('check')}</span><div class="grow">${esc(ui.flash)}</div><button class="btn ghost sm" data-act="clear-flash">${ic('x')}</button></div>` : ''}
     <div><h3>Account & sync</h3><div class="card">
       <div class="srow"><div>Signed in as <b>${esc(store.user.username)}</b><div class="small muted">You stay signed in on this browser until you sign out.</div></div><button class="btn" data-act="sign-out">${ic('logout')} Sign out</button></div>
-      <div class="srow"><div class="row"><span class="sync-dot ${ss.status}"></span>${ss.status === 'synced' ? `Synced at ${M.fmtTime(ss.lastSynced)}` : esc(ss.error || ss.status)}</div><button class="btn" data-act="sync-now">${ic('sync')} Sync now</button></div>
+      <div class="srow"><div>Sync<div class="small muted">Changes sync a moment after you make them, and every 20 seconds.</div></div>${syncControl('big')}</div>
       <div class="srow"><div>Mac app<div class="small muted">In Cadence for Mac › Settings › Sync, enter this server and the same username and password:</div>
         <div class="mono code" style="margin-top:4px;display:inline-block">${esc(location.origin)}</div></div><button class="btn" data-act="copy-origin">${ic('copy')} Copy</button></div>
     </div></div>
@@ -563,7 +571,7 @@ function authView() {
 }
 
 // ---------- modals ----------
-function openModal(m) { ui.modal = m; renderModal(); }
+function openModal(m) { ui.modal = m; ui.modalFresh = true; renderModal(); }
 function closeModal() { ui.modal = null; renderModal(); render(); }
 
 function renderModal() {
@@ -578,7 +586,9 @@ function renderModal() {
   else if (m.type === 'booking') html = bookingDialog(m);
   else if (m.type === 'confirm') html = `<div class="dialog sm"><div class="body"><h2>${esc(m.title)}</h2><div class="muted">${esc(m.text)}</div></div>
     <div class="foot"><span class="grow"></span><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="confirm-yes">${esc(m.yes)}</button></div></div>`;
-  root.innerHTML = `<div class="overlay" data-act="overlay">${html}</div>`;
+  root.innerHTML = `<div class="overlay ${ui.modalFresh ? 'opening' : ''}" data-act="overlay">${html}</div>`;
+  ui.modalFresh = false;
+  animateRings();
   const focus = root.querySelector('[autofocus]');
   if (focus) setTimeout(() => focus.focus(), 0);
 }
@@ -606,7 +616,7 @@ function checkInDialog(m) {
   return `<div class="dialog"><div class="body">
     <div class="row" style="gap:14px"><span class="badge-icon" style="width:46px;height:46px;background:linear-gradient(135deg,#ffb340,#ff7a00)">${ic('sun')}</span>
       <div class="grow"><h2>${esc(m.title)}</h2><div class="muted">${M.fmtDay(new Date())} · ${!items.length ? 'nothing scheduled' : done === items.length ? 'all done' : `${items.length - done} left`}</div></div>
-      ${ring(done, items.length, 54, 6)}</div>
+      ${ring(done, items.length, 54, 6, 'checkin')}</div>
     ${done && done === items.length ? `<div class="green">${ic('check')} Everything is checked off. Nice work.</div>` : ''}
     <div class="card" style="max-height:340px;overflow:auto">${items.length ? items.map(o => crow(o, { ctx: 'checkin' })).join('') : '<div class="crow muted">Nothing on today’s checklist. Add something so future-you knows the plan.</div>'}</div>
     ${upcoming.length ? `<div><b>Still ahead on your calendar</b>${upcoming.slice(0, 4).map(e => `<div class="row small" style="margin-top:4px">
@@ -807,7 +817,7 @@ function showBanner(c) {
     <div class="t ellipsis">${esc(c.title)}</div><div class="b">${esc(c.body)}</div>
     <div class="row" style="justify-content:flex-end;margin-top:6px"><button class="btn sm" data-x>Dismiss</button>
     <button class="btn sm primary" data-open>${c.occurrence && !c.occurrence.done ? 'Complete…' : 'Open checklist'}</button></div></div>`;
-  const remove = () => el.remove();
+  const remove = () => { el.classList.add('leaving'); setTimeout(() => el.remove(), 200); };
   el.querySelector('[data-x]').onclick = remove;
   el.querySelector('[data-open]').onclick = () => {
     remove();
@@ -834,7 +844,12 @@ function newTaskAt(day, minutes) {
 function toggleOcc(id, ctx) {
   const o = findOcc(id);
   if (!o) return;
-  if (o.done) { store.uncomplete(o); if (ui.modal?.type === 'detail') closeModal(); return; }
+  if (o.done) {
+    store.uncomplete(o);
+    if (ui.modal?.type === 'detail') closeModal();
+    toast(`Unchecked ${o.task.title} — the reflection stays saved`, { icon: 'circle' });
+    return;
+  }
   if (ctx === 'checkin' && ui.modal?.type === 'checkin') { ui.modal.reflecting = o; renderModal(); return; }
   beginReflection(o);
 }
@@ -846,10 +861,21 @@ const actions = {
   'new-at': el => { const d = new Date(Number(el.dataset.at)); newTaskAt(d, Math.min(1435, Math.floor(M.minutesOf(d) / 5) * 5)); },
   edit: el => { const t = store.tasks.get(el.dataset.task); if (t) openEditor(t, false); },
   toggle: el => toggleOcc(el.dataset.occ, el.dataset.ctx),
-  skip: el => { const o = findOcc(el.dataset.occ); if (o) store.skip(o); if (ui.modal?.type === 'detail') closeModal(); },
+  skip: el => {
+    const o = findOcc(el.dataset.occ);
+    if (!o) return;
+    const before = structuredClone(o.task);
+    store.skip(o);
+    if (ui.modal?.type === 'detail') closeModal();
+    toast(`Skipped ${o.task.title} for ${M.fmtDay(o.day, { weekday: 'short', month: 'short', day: 'numeric' })}`, { icon: 'right', undo: () => store.upsertTask({ ...before, skipped: (store.tasks.get(before.id)?.skipped || []).filter(k => k !== o.key) }) });
+  },
   'delete-task': el => {
     const t = store.tasks.get(el.dataset.task);
-    if (t) confirmThen(`Delete “${t.title}”?`, 'This removes the task and all its repeats. Reflections you’ve written stay in the Reflections tab.', 'Delete task', () => store.deleteTask(t.id));
+    if (!t) return;
+    const copy = structuredClone(t);
+    store.deleteTask(t.id);
+    if (ui.modal) closeModal();
+    toast(`Deleted “${t.title}”`, { icon: 'trash', undo: () => { store.restoreTask(copy); toast('Task restored', { icon: 'check' }); } });
   },
   'confirm-yes': () => { const fn = ui.modal.fn; closeModal(); fn(); },
   close: el => { const then = el.dataset.then; closeModal(); if (then) location.hash = then; },
@@ -883,8 +909,14 @@ const actions = {
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   },
-  'copy-refl': el => navigator.clipboard?.writeText(store.reflections.get(el.dataset.id)?.text ?? ''),
-  'delete-refl': el => confirmThen('Delete this reflection?', 'The task stays checked off. This can’t be undone.', 'Delete', () => store.deleteReflection(el.dataset.id)),
+  'copy-refl': el => { navigator.clipboard?.writeText(store.reflections.get(el.dataset.id)?.text ?? ''); toast('Copied to clipboard', { icon: 'copy' }); },
+  'delete-refl': el => {
+    const r = store.reflections.get(el.dataset.id);
+    if (!r) return;
+    const copy = structuredClone(r);
+    store.deleteReflection(r.id);
+    toast('Reflection deleted', { icon: 'trash', undo: () => store.restoreReflection(copy) });
+  },
   'pick-meeting': el => { ui.booking.meetingId = el.dataset.id; render(); },
   'busy-refresh': () => { ui.booking.loadedFor = null; loadBusy(); },
   'copy-avail': () => {
@@ -896,8 +928,8 @@ const actions = {
     ui.booking.message = 'Availability copied to the clipboard.'; render();
   },
   book: el => { const slot = ui.booking.slots[el.dataset.d][1][el.dataset.s]; openModal({ type: 'booking', slot }); },
-  'sync-now': () => store.sync(),
-  'copy-origin': () => navigator.clipboard?.writeText(location.origin),
+  'sync-now': () => { syncUI.manual = true; store.sync(); },
+  'copy-origin': () => { navigator.clipboard?.writeText(location.origin); toast('Address copied', { icon: 'copy' }); },
   'clear-flash': () => { ui.flash = null; render(); },
   'ask-notify': async () => { if ('Notification' in window) await Notification.requestPermission(); render(); },
   'test-reminder': () => reminders.deliver({ kind: 'test', title: 'Test reminder', body: 'This is how Cadence reminders will look.', tint: '#0a84ff' }, store.settings.defaultChannels),
@@ -1015,7 +1047,10 @@ document.addEventListener('submit', async e => {
   if (kind === 'quick') {
     const input = form.querySelector('input');
     const title = input.value.trim();
-    if (title) store.upsertTask(M.newTask({ title, channels: [...store.settings.defaultChannels] }));
+    if (title) {
+      store.upsertTask(M.newTask({ title, channels: [...store.settings.defaultChannels] }));
+      toast(`Added “${title}” to today`, { icon: 'plus' });
+    }
     input.value = '';
   } else if (kind === 'auth') {
     const fd = new FormData(form);
@@ -1032,6 +1067,9 @@ document.addEventListener('submit', async e => {
     const text = $('#reflText').value.trim();
     const o = findOcc(form.dataset.occ);
     if (!o || !store.complete(o, text)) return;
+    ui.justDone.add(o.id);
+    setTimeout(() => { ui.justDone.delete(o.id); }, 1200);
+    toast(`Checked off ${o.task.title} · reflection saved`, { icon: 'check', tone: 'good' });
     if (form.dataset.ctx === 'checkin') { ui.modal.reflecting = null; renderModal(); render(); } else closeModal();
   } else if (kind === 'editor') {
     saveEditor();
@@ -1058,7 +1096,17 @@ document.addEventListener('submit', async e => {
   }
 });
 
+const SHORTCUT_FOR = { today: 'T', week: 'W', month: 'M', todo: 'L', reflections: 'R', booking: 'B', settings: ',' };
 document.addEventListener('keydown', e => {
+  const typing = e.target.closest?.('input, textarea, select, [contenteditable]');
+  if (!typing && !ui.modal && store.user && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    const k = e.key.toLowerCase();
+    const route = Object.entries(SHORTCUT_FOR).find(([, key]) => key.toLowerCase() === k)?.[0];
+    if (route) { e.preventDefault(); location.hash = route; return; }
+    if (k === 'n') { e.preventDefault(); newTaskAt(new Date()); return; }
+    if (k === 'c') { e.preventDefault(); reminders.checkIn('Daily check-in', { manual: true }); return; }
+    if (k === 's') { e.preventDefault(); syncUI.manual = true; store.sync(); return; }
+  }
   if (e.key === 'Escape' && ui.modal && ui.modal.type !== 'editor') closeModal();
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && e.target.id === 'reflText' && !$('#reflSubmit').disabled) $('#reflSubmit').click();
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && e.target.closest('[data-form="editor"]')) { e.preventDefault(); saveEditor(); }
@@ -1066,6 +1114,82 @@ document.addEventListener('keydown', e => {
 
 // Keep "now" lines, greetings and day boundaries fresh.
 setInterval(() => { if (!ui.modal || ['checkin', 'detail'].includes(ui.modal.type)) render(); }, 60_000);
+
+// ---------- sync indicator ----------
+const syncUI = { manual: false, spinUntil: 0, flashUntil: 0 };
+
+function relTime(d) {
+  const sec = (Date.now() - new Date(d)) / 1000;
+  if (sec < 45) return 'just now';
+  if (sec < 3600) return `${Math.round(sec / 60)} min ago`;
+  return `at ${M.fmtTime(d)}`;
+}
+
+function syncControl(size = '') {
+  return `<button class="syncbtn ${size}" data-act="sync-now" data-sync-ui title="Sync now (S)">
+    <span class="sync-icon">${ic('sync', 'spin')}${ic('check', 'done')}</span><span class="sync-label">Sync</span></button>`;
+}
+
+function updateSyncUI() {
+  const now = Date.now();
+  const spinning = now < syncUI.spinUntil;
+  const s = store.syncState;
+  let label, state;
+  if (spinning) { label = 'Syncing…'; state = 'syncing'; }
+  else if (s.status === 'offline') { label = s.error || 'Offline'; state = 'offline'; }
+  else if (s.lastSynced) { label = `Synced ${relTime(s.lastSynced)}`; state = now < syncUI.flashUntil ? 'synced flash' : 'synced'; }
+  else { label = 'Not synced yet'; state = ''; }
+  if (store.pending.size && !spinning) label += ` · ${store.pending.size} waiting`;
+  for (const el of document.querySelectorAll('[data-sync-ui]')) {
+    el.className = `syncbtn ${el.classList.contains('big') ? 'big' : ''} ${state}`;
+    el.querySelector('.sync-label').textContent = label;
+    el.title = s.status === 'offline' ? `${label} — click to retry` : 'Sync now (S)';
+  }
+}
+
+store.onSync(() => {
+  if (store.syncing) {
+    // Show motion for anything the user caused (a button press or a local edit being pushed);
+    // quiet background polls don't flicker the icon.
+    if (syncUI.manual || store.pending.size) syncUI.spinUntil = Math.max(syncUI.spinUntil, Date.now() + 750);
+    updateSyncUI();
+    return;
+  }
+  const visible = syncUI.spinUntil > Date.now() - 50;
+  const finish = () => {
+    if (visible && store.syncState.status === 'synced') syncUI.flashUntil = Date.now() + 1400;
+    if (syncUI.manual && store.syncState.status === 'offline') toast(store.syncState.error || 'Couldn’t reach the server', { icon: 'alert', tone: 'bad' });
+    syncUI.manual = false;
+    updateSyncUI();
+    setTimeout(updateSyncUI, 1500);
+  };
+  setTimeout(finish, Math.max(0, syncUI.spinUntil - Date.now()));
+});
+setInterval(updateSyncUI, 30_000);
+addEventListener('offline', updateSyncUI);
+
+// ---------- progress rings animate from their previous value ----------
+function animateRings() {
+  const arcs = document.querySelectorAll('.ring-arc[data-to]');
+  if (!arcs.length) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    for (const a of arcs) a.style.strokeDashoffset = a.dataset.to;
+  }));
+}
+
+// ---------- toasts ----------
+function toast(text, { icon = 'check', undo, tone } = {}) {
+  let box = $('#toasts');
+  if (!box) { box = document.createElement('div'); box.id = 'toasts'; document.body.append(box); }
+  const el = document.createElement('div');
+  el.className = `toast ${tone || ''}`;
+  el.innerHTML = `${ic(icon)}<span class="grow">${esc(text)}</span>${undo ? '<button class="btn sm">Undo</button>' : ''}`;
+  const close = () => { el.classList.add('leaving'); setTimeout(() => el.remove(), 200); };
+  if (undo) el.querySelector('button').onclick = () => { undo(); close(); };
+  box.append(el);
+  while (box.children.length > 3) box.firstElementChild.remove();
+  setTimeout(close, undo ? 6000 : 2800);
+}
 
 // ---------- start ----------
 readRoute();

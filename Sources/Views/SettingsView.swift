@@ -41,19 +41,9 @@ struct SettingsView: View {
                 HStack {
                     Label("Signed in as \(user)", systemImage: "person.crop.circle.badge.checkmark").foregroundStyle(.green)
                     Spacer()
-                    Button("Sync now") { sync.sync() }
+                    SyncIndicator(prominent: true)
                     Button("Sign out", role: .destructive) { sync.signOut() }
                 }
-                HStack(spacing: 6) {
-                    switch sync.status {
-                    case .syncing: ProgressView().controlSize(.small); Text("Syncing…")
-                    case .error(let m): Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange); Text(m)
-                    default:
-                        Image(systemName: "checkmark.icloud").foregroundStyle(.secondary)
-                        Text(sync.lastSynced.map { "Last synced \(timeString($0))" } ?? "Waiting to sync")
-                    }
-                }
-                .font(.caption).foregroundStyle(.secondary)
                 Text(sync.serverURL).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
             } else {
                 TextField("Cadence Web address", text: $sync.serverURL, prompt: Text("https://your-cadence.vercel.app"))

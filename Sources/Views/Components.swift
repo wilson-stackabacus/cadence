@@ -116,6 +116,7 @@ struct CheckButton: View {
                 .font(.system(size: 19))
                 .foregroundStyle(done ? color : Color.secondary)
                 .contentTransition(.symbolEffect(.replace))
+                .symbolEffect(.bounce, value: done)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

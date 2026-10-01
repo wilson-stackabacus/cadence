@@ -40,12 +40,15 @@ struct RootView: View {
                 .padding(.bottom, 4)
             }
             .safeAreaInset(edge: .bottom) {
-                Button { model.newTask() } label: {
-                    Label("New Task", systemImage: "plus").frame(maxWidth: .infinity)
+                VStack(alignment: .leading, spacing: 6) {
+                    Button { model.newTask() } label: {
+                        Label("New Task", systemImage: "plus").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .keyboardShortcut("n", modifiers: .command)
+                    SyncIndicator()
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .keyboardShortcut("n", modifiers: .command)
                 .padding(12)
             }
         } detail: {
