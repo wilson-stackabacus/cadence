@@ -1,0 +1,17 @@
+{
+  "name": "cadence-web",
+  "version": "1.0.0",
+  "description": "Cadence web app + sync API (Vercel + Turso)",
+  "scripts": {
+    "dev": "node server/dev.js",
+    "test": "node test/run.js"
+  },
+  "type": "module",
+  "dependencies": {
+    "@libsql/client": "^0.18.0"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}

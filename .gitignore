@@ -1,0 +1,17 @@
+# Xcode / build output (regenerate the project with `xcodegen generate`)
+build/
+DerivedData/
+Cadence.xcodeproj/
+*.xcuserstate
+xcuserdata/
+
+# Web: dependencies, local database, deploy link, secrets
+web/node_modules/
+web/data/
+web/.vercel/
+.vercel/
+.env
+.env.*
+web/test/dev-account.json
+
+.DS_Store
