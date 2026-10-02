@@ -11,7 +11,7 @@ final class SyncService: ObservableObject {
     }
 
     /// The live Cadence Web. Used unless you enter a different server.
-    static let defaultServer = "https://cadence-gray-zeta.vercel.app"
+    static let defaultServer = "https://cadenceplanner.vercel.app"
 
     /// Debug/test runs (launched with -dataDir) get their own settings so they never touch yours.
     private static let defaults: UserDefaults = LaunchOptions.has("-dataDir")
@@ -63,6 +63,8 @@ final class SyncService: ObservableObject {
         var saved = Self.defaults.string(forKey: Keys.server) ?? ""
         // A local test address (left behind by an earlier test run) is never what you want in the real app.
         if !LaunchOptions.has("-dataDir"), saved.contains("127.0.0.1") || saved.contains("localhost") { saved = "" }
+        // The site moved to a cleaner address; the old one still redirects, but use the new one directly.
+        if saved.contains("cadence-gray-zeta.vercel.app") { saved = Self.defaultServer }
         let resolved = saved.isEmpty ? Self.defaultServer : saved
         Self.defaults.set(resolved, forKey: Keys.server)
         serverURL = resolved

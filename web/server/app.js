@@ -146,9 +146,9 @@ async function route(req, res, url) {
   if (p === '/api/google/callback' && m === 'GET') {
     try {
       await google.handleCallback(url.searchParams, originOf(req));
-      res.writeHead(302, { Location: '/#settings?google=connected' });
+      res.writeHead(302, { Location: '/app/settings?google=connected' });
     } catch (e) {
-      res.writeHead(302, { Location: `/#settings?google=${encodeURIComponent(e.message)}` });
+      res.writeHead(302, { Location: `/app/settings?google=${encodeURIComponent(e.message)}` });
     }
     return res.end();
   }

@@ -3,54 +3,123 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Cadence</title>
-  <meta name="description" content="Daily checklist, calendars, reminders and reflections — synced with the Cadence Mac app.">
+  <title>Cadence — your daily checklist, with reflection</title>
+  <meta name="description" content="Cadence is a daily planner with week and month calendars, recurring tasks, reminders that actually find you, and a short reflection every time you check something off. Free, on the web and Mac.">
+  <link rel="canonical" href="https://cadenceplanner.vercel.app/">
+  <meta property="og:title" content="Cadence — your daily checklist, with reflection">
+  <meta property="og:description" content="Plan your day, get nudged at the right moments, and reflect on what you finish.">
+  <meta property="og:image" content="https://cadenceplanner.vercel.app/icon-512.png">
+  <meta name="theme-color" content="#e2558c">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="manifest" href="/manifest.webmanifest">
-  <meta name="theme-color" content="#e2558c">
-  <link rel="stylesheet" href="/css/app.css">
-  <script type="module" src="/js/app.js"></script>
+  <link rel="stylesheet" href="/css/home.css">
 </head>
 <body>
   <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
-    <defs>
-      <symbol id="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
-      <symbol id="week" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4M9 13h6M9 17h3"/></symbol>
-      <symbol id="month" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/><circle cx="8" cy="13" r=".6"/><circle cx="12" cy="13" r=".6"/><circle cx="16" cy="13" r=".6"/><circle cx="8" cy="17" r=".6"/><circle cx="12" cy="17" r=".6"/></symbol>
-      <symbol id="list" viewBox="0 0 24 24"><path d="M10 6h11M10 12h11M10 18h11"/><path d="M3 6l1.5 1.5L7 5M3 12l1.5 1.5L7 11"/><circle cx="5" cy="18" r="1.5"/></symbol>
-      <symbol id="quote" viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h13"/><path d="M19 13v6"/></symbol>
-      <symbol id="people" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5 1.4 0 2.6.4 3.6 1"/><circle cx="17.5" cy="16.5" r="4.5"/><path d="M17.5 14.5v2l1.5 1"/></symbol>
-      <symbol id="gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
-      <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
-      <symbol id="left" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
-      <symbol id="right" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
-      <symbol id="circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></symbol>
-      <symbol id="checked" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><path d="M8 12.5l2.5 2.5L16 9.5" stroke="#fff"/></symbol>
-      <symbol id="check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
-      <symbol id="repeat" viewBox="0 0 24 24"><path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12"/><path d="M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/></symbol>
-      <symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
-      <symbol id="trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
-      <symbol id="bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></symbol>
-      <symbol id="x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
-      <symbol id="logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
-      <symbol id="link" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
-      <symbol id="refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></symbol>
-      <symbol id="copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></symbol>
-      <symbol id="cal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></symbol>
-      <symbol id="sync" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16M3 12A9 9 0 0 1 18.5 5.8L21 8M21 3v5h-5M3 21v-5h5"/></symbol>
-      <symbol id="alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/></symbol>
-      <symbol id="layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></symbol>
-      <symbol id="flame" viewBox="0 0 24 24"><path d="M12 21c-4 0-7-2.7-7-6.5 0-3.8 3-5.6 4-9.5 2 1.5 3 3.5 3 5.5 1-.7 1.7-2 2-3 2.2 2 3 4.6 3 7 0 3.8-1.5 6.5-5 6.5z"/></symbol>
-      <symbol id="text" viewBox="0 0 24 24"><path d="M5 5h14M12 5v14M9 19h6"/></symbol>
-      <symbol id="stack" viewBox="0 0 24 24"><rect x="4" y="9" width="16" height="11" rx="2"/><path d="M7 6h10M9 3h6"/></symbol>
-      <symbol id="mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></symbol>
-      <symbol id="bell-off" viewBox="0 0 24 24"><path d="M8.7 3.6A6 6 0 0 1 18 8c0 3.4.7 5.6 1.5 7M6.3 6.3A6 6 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0M3 3l18 18"/></symbol>
-      <symbol id="menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
-    </defs>
+    <symbol id="cal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></symbol>
+    <symbol id="repeat" viewBox="0 0 24 24"><path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12"/><path d="M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/></symbol>
+    <symbol id="bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></symbol>
+    <symbol id="quote" viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h13"/><path d="M19 13v6"/></symbol>
+    <symbol id="people" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5 1.4 0 2.6.4 3.6 1"/><circle cx="17.5" cy="16.5" r="4.5"/><path d="M17.5 14.5v2l1.5 1"/></symbol>
+    <symbol id="sync" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16M3 12A9 9 0 0 1 18.5 5.8L21 8M21 3v5h-5M3 21v-5h5"/></symbol>
+    <symbol id="check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="list" viewBox="0 0 24 24"><path d="M10 6h11M10 12h11M10 18h11"/><path d="M3 6l1.5 1.5L7 5M3 12l1.5 1.5L7 11"/><circle cx="5" cy="18" r="1.5"/></symbol>
   </svg>
-  <div id="app"><div class="splash"><img src="/icon-192.png" alt="" width="72" height="72"></div></div>
-  <div id="modal"></div>
-  <div id="banners" aria-live="polite"></div>
+
+  <nav class="nav"><div class="wrap">
+    <a class="brand" href="/"><img src="/icon-192.png" alt="">Cadence</a>
+    <div class="links">
+      <a href="#features">Features</a><a href="#how">How it works</a><a href="/privacy">Privacy</a>
+      <a class="btn" href="/app" data-signin>Sign in</a>
+      <a class="btn primary" href="/app?mode=register" data-start>Get started</a>
+    </div>
+  </div></nav>
+
+  <header class="hero"><div class="wrap">
+    <div>
+      <span class="eyebrow"><svg class="i"><use href="#check"/></svg> Free · Web and Mac</span>
+      <h1>Plan your day.<br>Check it off.<br><span class="grad">Learn from it.</span></h1>
+      <p class="lede">Cadence is a daily checklist with week and month calendars, recurring tasks, and reminders that actually find you. Every time you finish something, you write a short reflection, so you get a little better each day.</p>
+      <div class="ctas">
+        <a class="btn primary" href="/app?mode=register" data-start>Get started — it's free <svg class="i"><use href="#arrow"/></svg></a>
+        <a class="btn" href="/app" data-signin>I have an account</a>
+      </div>
+      <div class="fine">No credit card. No ads. Your data stays yours.</div>
+    </div>
+
+    <div class="mock" aria-hidden="true">
+      <div class="float banner"><span class="dot"><svg class="i"><use href="#list"/></svg></span><div><b>Checklist check — 2 left</b><span>Deep work, Call grandma</span></div></div>
+      <div class="mock-card">
+        <div class="mock-head"><div><small>Good morning</small><b>Thursday, October 1</b></div>
+          <div class="ring"><svg width="62" height="62"><circle cx="31" cy="31" r="27" fill="none" stroke="var(--line)" stroke-width="7"/>
+            <circle class="arc" cx="31" cy="31" r="27" fill="none" stroke="url(#g)" stroke-width="7" stroke-linecap="round"/>
+            <defs><linearGradient id="g"><stop offset="0" stop-color="#ff8c5c"/><stop offset="1" stop-color="#6b4ddb"/></linearGradient></defs></svg><span>3/5</span></div></div>
+        <div class="row done" style="--c:#30d158"><span class="chk"><svg class="i"><use href="#check"/></svg></span><span class="bar"></span><div><div class="t">Morning run</div><div class="m">7:00 AM · Mon, Wed, Fri</div></div></div>
+        <div class="row done" style="--c:#0a84ff"><span class="chk"><svg class="i"><use href="#check"/></svg></span><span class="bar"></span><div><div class="t">Stand-up meeting</div><div class="m">10:00 AM · Every weekday</div></div><span class="tag">Google</span></div>
+        <div class="row done" style="--c:#bf5af2"><span class="chk"><svg class="i"><use href="#check"/></svg></span><span class="bar"></span><div><div class="t">Read 20 pages</div><div class="m">Any time · Every day</div></div></div>
+        <div class="row" style="--c:#30b0c7"><span class="chk"></span><span class="bar"></span><div><div class="t">Deep work block</div><div class="m">1:00 – 3:00 PM</div></div></div>
+        <div class="row" style="--c:#ff375f"><span class="chk"></span><span class="bar"></span><div><div class="t">Call grandma</div><div class="m">7:00 PM</div></div><span class="tag">Calendly</span></div>
+      </div>
+      <div class="float refl"><b>Reflection · Read 20 pages</b><i>“Pairing reading with my evening tea made it automatic. Twenty pages flew by — keep the phone in the other room.”</i></div>
+    </div>
+  </div></header>
+
+  <section id="features"><div class="wrap">
+    <div class="kicker reveal">Everything in one place</div>
+    <h2 class="reveal">A planner that keeps you honest</h2>
+    <p class="sub reveal">Calendars to see the shape of your week, a checklist to focus today, and gentle nudges until it's done.</p>
+    <div class="features">
+      <div class="feature reveal" style="--h:#0a84ff"><div class="ic"><svg class="i"><use href="#cal"/></svg></div><h3>Week &amp; month calendars</h3><p>See everything at a glance, stack overlapping tasks, and double-click any slot to add one.</p></div>
+      <div class="feature reveal" style="--h:#30b0c7"><div class="ic"><svg class="i"><use href="#repeat"/></svg></div><h3>Recurring tasks</h3><p>Daily, weekdays, every few weeks, monthly or yearly — with end dates, skips, and reminders mid-task.</p></div>
+      <div class="feature reveal" style="--h:#ff9f0a"><div class="ic"><svg class="i"><use href="#bell"/></svg></div><h3>Reminders that find you</h3><p>Notifications, on-screen banners or sounds, a nudge every 30 minutes, and a check-in whenever you open your computer.</p></div>
+      <div class="feature reveal" style="--h:#5e5ce6"><div class="ic"><svg class="i"><use href="#quote"/></svg></div><h3>Reflect as you go</h3><p>Checking something off asks for a short reflection. Over time they add up to a record of how you work best.</p></div>
+      <div class="feature reveal" style="--h:#bf5af2"><div class="ic"><svg class="i"><use href="#people"/></svg></div><h3>Google Calendar &amp; Calendly</h3><p>Your events and booked meetings land on your checklist automatically, and quietly, with no extra pings.</p></div>
+      <div class="feature reveal" style="--h:#30d158"><div class="ic"><svg class="i"><use href="#sync"/></svg></div><h3>Mac and web, in sync</h3><p>Use Cadence in any browser or as a Mac app. Changes sync in seconds, and it works offline too.</p></div>
+    </div>
+  </div></section>
+
+  <section id="how" style="padding-top:20px"><div class="wrap">
+    <div class="kicker reveal">How it works</div>
+    <h2 class="reveal">Three steps, every day</h2>
+    <p class="sub reveal">Small, consistent habits beat perfect plans.</p>
+    <div class="steps">
+      <div class="step reveal"><h3>Plan</h3><p>Add today's tasks and set the ones that repeat. Connect your calendars to pull in meetings.</p></div>
+      <div class="step reveal"><h3>Do</h3><p>Cadence reminds you at the right moments and checks in when you sit back down at your computer.</p></div>
+      <div class="step reveal"><h3>Reflect</h3><p>Write a few words when you finish. See your streak grow and learn what actually works for you.</p></div>
+    </div>
+  </div></section>
+
+  <section style="padding-top:20px"><div class="wrap">
+    <div class="cta-band reveal">
+      <h2>Start your next good day</h2>
+      <p>Free, private, and ready in under a minute.</p>
+      <a class="btn" href="/app?mode=register" data-start>Create your account</a>
+    </div>
+  </div></section>
+
+  <footer><div class="wrap">
+    <a class="brand" href="/"><img src="/icon-192.png" alt="" style="width:22px;height:22px;border-radius:6px">Cadence</a>
+    <span class="sp"></span>
+    <a href="/app">Open the app</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="mailto:cadencemain26@gmail.com">Contact</a>
+    <span>© 2026 Cadence</span>
+  </div></footer>
+
+  <script>
+    // Old links like /#today go straight into the app.
+    const legacy = () => { if (/^#(home|today|week|month|todo|reflections|booking|settings)\b/.test(location.hash)) location.replace('/app/' + location.hash.slice(1).split('?')[0]); };
+    legacy();
+    addEventListener('hashchange', legacy);
+    // Signed in already? Point the buttons at the app instead of the sign-up form.
+    fetch('/api/me', { credentials: 'same-origin' }).then(r => {
+      if (!r.ok) return;
+      document.querySelectorAll('[data-start]').forEach(a => { a.href = '/app'; a.firstChild.textContent = 'Open Cadence '; });
+      document.querySelectorAll('[data-signin]').forEach(a => a.remove());
+    }).catch(() => {});
+    // Fade sections in as they scroll into view.
+    const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { threshold: .12 });
+    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  </script>
 </body>
 </html>

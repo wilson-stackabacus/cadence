@@ -1,7 +1,7 @@
 {
   "name": "Cadence",
   "short_name": "Cadence",
-  "start_url": "/#today",
+  "start_url": "/app",
   "display": "standalone",
   "background_color": "#1c1c1e",
   "theme_color": "#e2558c",

@@ -13,13 +13,14 @@ const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const HOUR = 48;
 
 const SCREENS = [
+  ['home', 'Home', 'house', ''],
   ['today', 'Today', 'sun', 'Plan'], ['week', 'Week', 'week', 'Plan'], ['month', 'Month', 'month', 'Plan'],
   ['todo', 'To-Do List', 'list', 'Plan'], ['reflections', 'Reflections', 'quote', 'Grow'],
   ['booking', 'Booking', 'people', 'Connect'], ['settings', 'Settings', 'gear', ''],
 ];
 
 const ui = {
-  route: 'today',
+  route: 'home',
   weekStart: M.startOfWeek(new Date()),
   month: M.startOfMonth(new Date()),
   selectedDay: M.startOfDay(new Date()),
@@ -42,22 +43,34 @@ const reminders = new Reminders({
   checkIn: title => openModal({ type: 'checkin', title, reflecting: null }),
   openChecklist: occ => {
     if (occ && !occ.done) beginReflection(occ);
-    else { location.hash = 'today'; }
+    else navigate('today');
   },
 });
 
 // ---------- routing ----------
+// Clean URLs: /app/<screen>. Old #screen links are upgraded in place.
 function readRoute() {
-  const [route, query] = location.hash.replace(/^#/, '').split('?');
-  ui.route = SCREENS.some(s => s[0] === route) ? route : 'today';
-  const google = new URLSearchParams(query || '').get('google');
+  const legacy = location.hash.replace(/^#/, '').split('?')[0];
+  if (legacy && SCREENS.some(s => s[0] === legacy)) history.replaceState(null, '', `/app/${legacy}`);
+  const route = (location.pathname.match(/^\/app\/?([^/]*)/) || [])[1] || 'home';
+  ui.route = SCREENS.some(s => s[0] === route) ? route : 'home';
+  const params = new URLSearchParams(location.search);
+  const google = params.get('google');
   if (google) {
     ui.flash = google === 'connected' ? 'Google Calendar connected.' : `Google: ${google}`;
-    history.replaceState(null, '', '#settings');
+    history.replaceState(null, '', '/app/settings');
     store.refreshGoogle();
   }
+  if (params.get('mode') === 'register') { ui.auth.mode = 'register'; history.replaceState(null, '', location.pathname); }
 }
-addEventListener('hashchange', () => { readRoute(); render(); });
+
+function navigate(route) {
+  const path = route === 'home' ? '/app' : `/app/${route}`;
+  if (location.pathname !== path) history.pushState(null, '', path);
+  readRoute();
+  render();
+}
+addEventListener('popstate', () => { readRoute(); render(); });
 
 // ---------- rendering ----------
 let booted = false;
@@ -106,9 +119,9 @@ function sidebar() {
   let lastSection = null;
   const items = SCREENS.map(([id, label, icon, section]) => {
     let head = '';
-    if (section !== lastSection) { head = section ? `<div class="nav-section">${section}</div>` : '<div class="nav-section"></div>'; lastSection = section; }
+    if (section !== lastSection) { head = section ? `<div class="nav-section">${section}</div>` : id === 'home' ? '' : '<div class="nav-section"></div>'; lastSection = section; }
     const badge = id === 'today' ? store.remainingToday() : id === 'reflections' ? store.reflections.size : '';
-    return `${head}<a class="nav-item ${ui.route === id ? 'on' : ''}" href="#${id}" title="${label} (${SHORTCUT_FOR[id]})">${ic(icon)}<span class="lbl">${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
+    return `${head}<a class="nav-item ${ui.route === id ? 'on' : ''}" href="${id === 'home' ? '/app' : `/app/${id}`}" title="${label} (${SHORTCUT_FOR[id]})">${ic(icon)}<span class="lbl">${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
   }).join('');
   return `<nav class="sidebar">
     <div class="brand"><img src="/icon-192.png" alt=""><span>Cadence</span></div>
@@ -131,7 +144,8 @@ function view() {
     case 'reflections': return reflectionsView();
     case 'booking': return bookingView();
     case 'settings': return settingsView();
-    default: return todayView();
+    case 'today': return todayView();
+    default: return homeView();
   }
 }
 
@@ -182,6 +196,67 @@ function findOcc(id) {
 function empty(icon, title, text) {
   return `<div style="text-align:center;padding:48px 16px" class="muted">
     <div style="font-size:36px">${ic(icon)}</div><div style="font-size:17px;font-weight:650;color:var(--text);margin:6px 0">${esc(title)}</div>${esc(text)}</div>`;
+}
+
+// ---------- Home (in-app dashboard) ----------
+function homeView() {
+  const now = new Date();
+  const all = store.todayChecklist();
+  const done = all.filter(o => o.done).length;
+  const open = all.filter(o => !o.done);
+  const hour = now.getHours();
+  const greet = hour >= 5 && hour < 12 ? 'Good morning' : hour >= 12 && hour < 17 ? 'Good afternoon' : 'Good evening';
+  const weekStart = M.startOfWeek(now);
+  const weekCount = [...Array(7)].reduce((n, _, i) => n + store.occurrencesOn(M.addDays(weekStart, i)).length, 0);
+  const overdue = store.overdue().length;
+  const latest = store.sortedReflections()[0];
+  const nextTimed = [...store.occurrencesOn(now), ...store.occurrencesOn(M.addDays(now, 1))]
+    .filter(o => !o.done && o.start && o.start > now).sort((a, b) => a.start - b.start)[0];
+  const nextEvent = store.googleEventsOn(now).find(e => !e.isAllDay && e.startDate > now);
+  const upNext = [nextTimed && { title: nextTimed.task.title, at: nextTimed.start, color: color(nextTimed.task.color) },
+    nextEvent && { title: nextEvent.title, at: nextEvent.startDate, color: nextEvent.colorHex || '#0a84ff' }]
+    .filter(Boolean).sort((a, b) => a.at - b.at)[0];
+  const ss = store.syncState;
+  const tile = (route, icon, title, value, sub, hue) => `<a class="tile" href="/app/${route}" style="--hue:${hue}">
+    <span class="tile-ic">${ic(icon)}</span><span class="tile-title">${title}</span>
+    <span class="tile-value">${value}</span><span class="tile-sub">${sub}</span></a>`;
+  return `<div class="page stack" style="padding-top:28px;max-width:980px">
+    <div class="hero"><div class="grow">
+      <div class="muted" style="font-size:17px">${greet}${store.user ? `, ${esc(store.user.username)}` : ''}</div>
+      <h2>${M.fmtDay(now)}</h2>
+      <div class="muted">${!all.length ? 'Nothing on your checklist today.' : done === all.length ? 'Everything is checked off. Nice work.' : `${open.length} thing${open.length === 1 ? '' : 's'} left today.`}</div></div>
+      <div class="row"><button class="btn" data-act="check-in">${ic('sun')} Check in</button><button class="btn primary" data-act="new-task">${ic('plus')} New task</button></div></div>
+
+    <div class="home-grid">
+      <a class="card pad home-today" href="/app/today">
+        <div class="row" style="gap:16px">${ring(done, all.length, 76, 9, 'home')}
+          <div class="grow"><div class="section-title" style="margin:0">${ic('sun')}Today</div>
+          <div class="muted small">${all.length ? `${done} of ${all.length} done` : 'A clear day'}${overdue ? ` · <span class="red">${overdue} overdue</span>` : ''}</div></div>
+          <span class="muted">${ic('right')}</span></div>
+        ${open.length ? `<div class="home-list">${open.slice(0, 4).map(o => `<div class="row small"><span style="width:7px;height:7px;border-radius:50%;background:${color(o.task.color)}"></span>
+          <span class="grow ellipsis">${esc(o.task.title)}</span><span class="muted">${o.start ? M.fmtTime(o.start) : o.overdue ? 'overdue' : 'any time'}</span></div>`).join('')}
+          ${open.length > 4 ? `<div class="small muted">+${open.length - 4} more</div>` : ''}</div>` : ''}
+      </a>
+      <div class="card pad home-next">
+        <div class="section-title" style="margin:0 0 6px">${ic('clock')}Up next</div>
+        ${upNext ? `<div class="row"><span style="width:4px;align-self:stretch;border-radius:2px;background:${upNext.color}"></span>
+          <div><div style="font-weight:600">${esc(upNext.title)}</div><div class="muted small">${M.isToday(upNext.at) ? '' : 'Tomorrow · '}${M.fmtTime(upNext.at)}</div></div></div>`
+          : '<div class="muted small">Nothing else scheduled with a time.</div>'}
+        <div class="section-title" style="margin:14px 0 6px">${ic('quote')}Latest reflection</div>
+        ${latest ? `<div class="small" style="font-style:italic">“${esc(latest.text.length > 140 ? latest.text.slice(0, 140) + '…' : latest.text)}”</div>
+          <div class="tiny muted" style="margin-top:4px">${esc(latest.taskTitle)}</div>` : '<div class="muted small">Check something off to write your first one.</div>'}
+      </div>
+    </div>
+
+    <div class="tiles">
+      ${tile('week', 'week', 'Week', weekCount, 'items this week', '#0a84ff')}
+      ${tile('month', 'month', 'Month', M.fmtDay(now, { month: 'short' }), 'see the whole month', '#30b0c7')}
+      ${tile('todo', 'list', 'To-Do List', store.tasks.size ? [...store.tasks.values()].filter(t => !t.archived).length : 0, overdue ? `${overdue} overdue` : 'all your tasks', '#ff9f0a')}
+      ${tile('reflections', 'quote', 'Reflections', store.reflections.size, store.reflectionStreak ? `${store.reflectionStreak}-day streak` : 'your record', '#5e5ce6')}
+      ${tile('booking', 'people', 'Booking', store.calendly.connected ? store.calendly.eventTypes.length : '—', store.calendly.connected ? 'Calendly links' : 'share open times', '#bf5af2')}
+      ${tile('settings', 'gear', 'Settings', ss.status === 'synced' ? 'Synced' : ss.status === 'offline' ? 'Offline' : '—', store.google.connected ? 'Google connected' : 'reminders & sync', '#8e8e93')}
+    </div>
+  </div>`;
 }
 
 // ---------- Today ----------
@@ -455,7 +530,7 @@ function bookingView() {
     <div class="page stack" style="max-width:1100px">
       ${!store.google.connected ? `<div class="callout warn"><span class="big">${ic('cal')}</span><div class="grow"><b>Google Calendar isn’t connected</b>
         <div class="small muted">Slots only account for your Cadence tasks, and bookings are saved as Cadence tasks without sending invites.</div></div>
-        <a class="btn" href="#settings">Connect in Settings</a></div>` : ''}
+        <a class="btn" href="/app/settings">Connect in Settings</a></div>` : ''}
       ${b.message ? `<div class="callout" style="background:${tint('#30d158', .12)}"><span class="big green">${ic('check')}</span><div class="grow">${esc(b.message)}</div></div>` : ''}
       ${store.calendly.connected && store.calendly.eventTypes.length ? `<div><div class="section-title">${ic('link')}Your Calendly links</div>
         <div class="small muted" style="margin:-4px 0 8px">Public links anyone can book from. Booked meetings land on your checklist automatically.</div>
@@ -468,7 +543,7 @@ function bookingView() {
         <div class="small muted">${ic('clock')} ${m.minutes} min</div><div class="small muted">${esc(m.details)}</div></button>`).join('')}</div></div>
       <div><div class="section-title">${ic('cal')}Open slots ${b.loading ? '<span class="small muted">loading…</span>' : ''}<span class="grow"></span>
         <span class="small muted" style="font-weight:400">${a.weekdays.map(w => M.WEEKDAY_SHORT[w - 1]).join(' ')} · ${M.fmtTimeMinutes(a.startMinutes)}–${M.fmtTimeMinutes(a.endMinutes)}</span>
-        <a class="btn sm" href="#settings">Edit hours</a></div>
+        <a class="btn sm" href="/app/settings">Edit hours</a></div>
         ${slots.length ? `<div class="slots">${slots.map(([d, ss], di) => `<div class="slotcol"><div class="hd"><div class="small muted">${M.WEEKDAY_SHORT[d.getDay()]}</div>
           <b>${M.fmtDay(d, { month: 'short', day: 'numeric' })}</b></div>${ss.map((s, si) => `<button class="btn slot" data-act="book" data-d="${di}" data-s="${si}">${M.fmtTime(s.start)}</button>`).join('')}</div>`).join('')}</div>`
           : `<div class="muted" style="padding:20px 0">No open slots in the next ${a.daysAhead} days with your current availability.</div>`}</div>
@@ -573,7 +648,7 @@ function settingsView() {
       <div class="srow"><span>Look ahead</span>${sel('availability.daysAhead', [7, 14, 21, 30, 45, 60].map(n => [n, `${n} days`]), a.daysAhead)}</div>
     </div></div>
 
-    <div class="small muted" style="order:99">Read our <a href="/privacy.html" target="_blank">Privacy Policy</a> and <a href="/terms.html" target="_blank">Terms of Service</a>.</div>
+    <div class="small muted" style="order:99">Read our <a href="/privacy" target="_blank">Privacy Policy</a> and <a href="/terms" target="_blank">Terms of Service</a>.</div>
 
     <div><h3>Meeting types</h3><div class="card">
       ${s.meetingTypes.map((m, i) => `<div class="srow" style="flex-wrap:wrap">
@@ -591,6 +666,7 @@ function settingsView() {
 function authView() {
   const a = ui.auth, create = a.mode === 'register';
   return `<div class="auth"><form class="auth-card" data-form="auth">
+    <a href="/" class="small muted" style="text-decoration:none">← Back to home</a>
     <div class="logo"><img src="/icon-192.png" alt=""><div><h1>Cadence</h1><div class="muted small">Your checklist, calendars and reflections — on the web and on your Mac.</div></div></div>
     <div class="seg" style="align-self:flex-start"><button type="button" class="${!create ? 'on' : ''}" data-act="auth-mode" data-mode="login">Sign in</button>
       <button type="button" class="${create ? 'on' : ''}" data-act="auth-mode" data-mode="register">Create account</button></div>
@@ -601,7 +677,7 @@ function authView() {
     ${a.error ? `<div class="error">${esc(a.error)}</div>` : ''}
     <button class="btn primary" style="min-height:38px" ${a.busy ? 'disabled' : ''}>${create ? 'Create account' : 'Sign in'}</button>
     <div class="small muted" style="text-align:center">${create ? 'By creating an account you agree to the' : 'See our'}
-      <a href="/terms.html" target="_blank">Terms of Service</a> and <a href="/privacy.html" target="_blank">Privacy Policy</a>.</div>
+      <a href="/terms" target="_blank">Terms of Service</a> and <a href="/privacy" target="_blank">Privacy Policy</a>.</div>
   </form></div>`;
 }
 
@@ -872,7 +948,7 @@ function showBanner(c) {
   el.querySelector('[data-open]').onclick = () => {
     remove();
     const occ = c.occurrence && findOcc(c.occurrence.id);
-    if (occ && !occ.done) beginReflection(occ); else location.hash = 'today';
+    if (occ && !occ.done) beginReflection(occ); else navigate('today');
   };
   const box = $('#banners');
   box.prepend(el);
@@ -928,7 +1004,7 @@ const actions = {
     toast(`Deleted “${t.title}”`, { icon: 'trash', undo: () => { store.restoreTask(copy); toast('Task restored', { icon: 'check' }); } });
   },
   'confirm-yes': () => { const fn = ui.modal.fn; closeModal(); fn(); },
-  close: el => { const then = el.dataset.then; closeModal(); if (then) location.hash = then; },
+  close: el => { const then = el.dataset.then; closeModal(); if (then) navigate(then); },
   overlay: (el, e) => { if (e.target === el && ui.modal?.type !== 'editor') closeModal(); },
   'checkin-back': () => { ui.modal.reflecting = null; renderModal(); },
   'check-in': () => reminders.checkIn('Daily check-in', { manual: true }),
@@ -1017,9 +1093,15 @@ document.addEventListener('click', e => {
     if (e.detail === 1) blockClickTimer = setTimeout(() => openModal({ type: 'detail', item: block.dataset.item }), 220);
     return;
   }
+  const link = e.target.closest('a[href^="/app"]');
+  if (link && !link.target && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
+    e.preventDefault();
+    const href = link.getAttribute('href');
+    navigate(href === '/app' ? 'home' : href.replace(/^\/app\//, ''));
+    return;
+  }
   const el = e.target.closest('[data-act]');
   if (!el) return;
-  if (el.tagName === 'A' && el.getAttribute('href')?.startsWith('#')) return;
   const fn = actions[el.dataset.act];
   if (fn) { if (el.tagName === 'BUTTON' && el.type !== 'submit') e.preventDefault(); fn(el, e); }
 });
@@ -1113,7 +1195,7 @@ document.addEventListener('submit', async e => {
     try {
       await store.signIn(String(fd.get('username')).trim(), String(fd.get('password')), { create: ui.auth.mode === 'register', remember: fd.get('remember') === 'on' });
       ui.auth = { mode: 'login', error: null, busy: false };
-      location.hash = 'today';
+      navigate('home');
       reminders.checkIn('Time to check in');
     } catch (err) {
       ui.auth.busy = false; ui.auth.error = err.message; render();
@@ -1174,13 +1256,13 @@ document.addEventListener('submit', async e => {
   }
 });
 
-const SHORTCUT_FOR = { today: 'T', week: 'W', month: 'M', todo: 'L', reflections: 'R', booking: 'B', settings: ',' };
+const SHORTCUT_FOR = { home: 'H', today: 'T', week: 'W', month: 'M', todo: 'L', reflections: 'R', booking: 'B', settings: ',' };
 document.addEventListener('keydown', e => {
   const typing = e.target.closest?.('input, textarea, select, [contenteditable]');
   if (!typing && !ui.modal && store.user && !e.metaKey && !e.ctrlKey && !e.altKey) {
     const k = e.key.toLowerCase();
     const route = Object.entries(SHORTCUT_FOR).find(([, key]) => key.toLowerCase() === k)?.[0];
-    if (route) { e.preventDefault(); location.hash = route; return; }
+    if (route) { e.preventDefault(); navigate(route); return; }
     if (k === 'n') { e.preventDefault(); newTaskAt(new Date()); return; }
     if (k === 'c') { e.preventDefault(); reminders.checkIn('Daily check-in', { manual: true }); return; }
     if (k === 's') { e.preventDefault(); syncUI.manual = true; store.sync(); return; }

@@ -372,8 +372,8 @@ struct SettingsView: View {
                 Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([store.fileURL]) }
             }
             HStack(spacing: 16) {
-                Link("Privacy Policy", destination: URL(string: "https://cadence-gray-zeta.vercel.app/privacy.html")!)
-                Link("Terms of Service", destination: URL(string: "https://cadence-gray-zeta.vercel.app/terms.html")!)
+                Link("Privacy Policy", destination: URL(string: "https://cadenceplanner.vercel.app/privacy")!)
+                Link("Terms of Service", destination: URL(string: "https://cadenceplanner.vercel.app/terms")!)
             }
             .font(.caption)
         } header: {

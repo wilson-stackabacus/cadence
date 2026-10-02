@@ -2,10 +2,11 @@ import AppKit
 import SwiftUI
 
 enum Screen: String, CaseIterable, Identifiable {
-    case today, week, month, todo, reflections, booking, settings
+    case home, today, week, month, todo, reflections, booking, settings
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .home: return "Home"
         case .today: return "Today"
         case .week: return "Week"
         case .month: return "Month"
@@ -17,6 +18,7 @@ enum Screen: String, CaseIterable, Identifiable {
     }
     var symbol: String {
         switch self {
+        case .home: return "house"
         case .today: return "sun.max"
         case .week: return "calendar.day.timeline.left"
         case .month: return "calendar"
@@ -42,7 +44,7 @@ final class AppModel: ObservableObject {
     let windows = WindowManager()
     private(set) lazy var engine = ReminderEngine(model: self)
 
-    @Published var screen: Screen = .today
+    @Published var screen: Screen = .home
     @Published var reflectionTarget: Occurrence?
     @Published var editingTask: PlanTask?
 

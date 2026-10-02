@@ -40,8 +40,8 @@ and password, **Sign in**. Existing Mac data is uploaded and merged; it stays si
 
 ### 4. (Optional) Google Calendar on the web
 In Google Cloud Console (Calendar API enabled), create an OAuth client of type **Web application** with redirect URI
-`https://<your-app>.vercel.app/api/google/callback`, then add to Vercel:
-`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PUBLIC_URL=https://<your-app>.vercel.app` and redeploy.
+`https://cadenceplanner.vercel.app/api/google/callback`, then add to Vercel:
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PUBLIC_URL=https://cadenceplanner.vercel.app` and redeploy.
 (The Mac app keeps using its own Desktop client.)
 
 ### 5. (Optional) Calendly
@@ -87,5 +87,7 @@ server/auth.js      scrypt passwords, sessions, login rate limiting
 server/db.js        Turso/libSQL client, schema, sync merge
 server/google.js    Google Calendar OAuth + proxy for the web
 server/dev.js       local dev server
-public/             the web app (no build step): index.html, css/, js/{app,store,model,reminders}.js
+public/index.html   public home page (/)
+public/app.html     the web app (/app, /app/week, …), no build step; js/{app,store,model,reminders}.js
+public/privacy.html, terms.html  legal pages (/privacy, /terms — vercel.json cleanUrls)
 ```

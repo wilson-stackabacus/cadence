@@ -18,8 +18,15 @@ const MIME = {
 createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname.startsWith('/api/')) return handleApi(req, res, url.pathname);
+  // Mirror vercel.json: /app and /app/* → app.html, clean URLs (/privacy → privacy.html, .html → clean).
   let rel = normalize(decodeURIComponent(url.pathname));
+  if (rel.endsWith('.html') && rel !== '/index.html' && rel !== '/app.html') {
+    res.writeHead(308, { Location: rel.replace(/\.html$/, '') + url.search });
+    return res.end();
+  }
   if (rel === '/') rel = '/index.html';
+  else if (rel === '/app' || rel.startsWith('/app/')) rel = '/app.html';
+  else if (!extname(rel)) rel += '.html';
   const file = join(PUBLIC, rel);
   try {
     if (!file.startsWith(PUBLIC) || !(await stat(file)).isFile()) throw new Error();

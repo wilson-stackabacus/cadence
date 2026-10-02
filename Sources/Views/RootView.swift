@@ -25,6 +25,9 @@ struct RootView: View {
                 .padding(.bottom, 2)
 
                 List(selection: selection) {
+                    Section {
+                        row(.home)
+                    }
                     Section("Plan") {
                         row(.today, badge: store.remainingToday)
                         row(.week)
@@ -85,6 +88,7 @@ struct RootView: View {
 
     @ViewBuilder private var detail: some View {
         switch model.screen {
+        case .home: HomeView()
         case .today: TodayView()
         case .week: WeekView()
         case .month: MonthView()

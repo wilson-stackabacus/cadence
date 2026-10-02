@@ -6,6 +6,14 @@
     {
       "source": "/api/:path*",
       "destination": "/api/index?__path=:path*"
+    },
+    {
+      "source": "/app",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/app/:path*",
+      "destination": "/app.html"
     }
   ],
   "headers": [
@@ -32,5 +40,7 @@
       "path": "/api/cron/google",
       "schedule": "0 9 * * *"
     }
-  ]
+  ],
+  "cleanUrls": true,
+  "trailingSlash": false
 }
