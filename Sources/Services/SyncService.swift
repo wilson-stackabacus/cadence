@@ -63,8 +63,9 @@ final class SyncService: ObservableObject {
         var saved = Self.defaults.string(forKey: Keys.server) ?? ""
         // A local test address (left behind by an earlier test run) is never what you want in the real app.
         if !LaunchOptions.has("-dataDir"), saved.contains("127.0.0.1") || saved.contains("localhost") { saved = "" }
-        serverURL = saved.isEmpty ? Self.defaultServer : saved
-        Self.defaults.set(serverURL, forKey: Keys.server)
+        let resolved = saved.isEmpty ? Self.defaultServer : saved
+        Self.defaults.set(resolved, forKey: Keys.server)
+        serverURL = resolved
         draftUsername = Self.defaults.string(forKey: Keys.draftUsername) ?? ""
         if Keychain.string(account: Keys.token) != nil, let u = Self.defaults.string(forKey: Keys.username) {
             username = u
