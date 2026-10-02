@@ -18,6 +18,7 @@ struct HomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 header(now: now, open: open.count, total: items.count)
+                if !sync.isSignedIn { syncPrompt }
                 HStack(alignment: .top, spacing: 14) {
                     todayCard(items: items, open: open, done: done, overdue: overdue)
                         .frame(maxWidth: .infinity)
@@ -43,6 +44,21 @@ struct HomeView: View {
     }
 
     // MARK: Pieces
+
+    private var syncPrompt: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "icloud.slash").font(.title2).foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("This Mac isn't syncing").font(.callout.weight(.semibold))
+                Text("Sign in with your cadenceplanner.vercel.app account to share tasks and reflections with the web.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Sign in") { model.screen = .settings }.buttonStyle(.borderedProminent)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.10)))
+    }
 
     private func header(now: Date, open: Int, total: Int) -> some View {
         HStack(alignment: .center) {

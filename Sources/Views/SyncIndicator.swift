@@ -6,8 +6,25 @@ struct SyncIndicator: View {
     @EnvironmentObject private var sync: SyncService
     var prominent = false
 
+    @EnvironmentObject private var model: AppModel
+
     var body: some View {
-        if sync.isSignedIn {
+        if !sync.isSignedIn {
+            // Never look like it's syncing when it isn't.
+            Button { model.screen = .settings } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "icloud.slash").frame(width: 14, height: 14)
+                    Text("Not syncing · Sign in").lineLimit(1)
+                }
+                .font(prominent ? .callout : .caption)
+                .foregroundStyle(.orange)
+                .padding(.horizontal, prominent ? 10 : 6)
+                .padding(.vertical, prominent ? 5 : 3)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(SyncButtonStyle(prominent: prominent))
+            .help("This Mac isn't connected to your Cadence account. Click to sign in.")
+        } else {
             Button { sync.sync(manual: true) } label: {
                 HStack(spacing: 6) {
                     ZStack {

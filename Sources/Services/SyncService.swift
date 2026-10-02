@@ -46,6 +46,7 @@ final class SyncService: ObservableObject {
         static let lastPushed = "sync.lastPushed"
         static let token = "session-token"
         static let draftUsername = "sync.draftUsername"
+        static let identity = "sync.identity"
     }
 
     private var cursor: Int {
@@ -118,10 +119,13 @@ final class SyncService: ObservableObject {
             ], token: nil)
             guard let token = json["token"] as? String,
                   let user = (json["user"] as? [String: Any])?["username"] as? String else { throw SyncError.badResponse }
-            // A different account starts from scratch: push everything here, pull everything there.
-            if user.lowercased() != Self.defaults.string(forKey: Keys.username)?.lowercased() {
+            // A different account or server (or the first sign-in) starts from scratch:
+            // push everything on this Mac, pull everything from the account, merge.
+            let identity = "\(base.absoluteString)|\(user.lowercased())"
+            if identity != Self.defaults.string(forKey: Keys.identity) {
                 cursor = 0
                 lastPushed = nil
+                Self.defaults.set(identity, forKey: Keys.identity)
             }
             Keychain.setString(token, account: Keys.token)
             Self.defaults.set(user, forKey: Keys.username)
