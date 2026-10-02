@@ -29,7 +29,7 @@ struct CheckInView: View {
     private var checklist: some View {
         let items = store.todayChecklist()
         let done = items.filter(\.isDone).count
-        let upcoming = google.events(on: Date()).filter { !$0.isAllDay && $0.end > Date() }
+        let upcoming = schedule(on: Date(), store: store, google: google).filter { ($0.end ?? .distantPast) > Date() && $0.start != nil }
         return VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 14) {
                 Image(systemName: "sun.max.fill")
@@ -81,7 +81,7 @@ struct CheckInView: View {
                     ForEach(upcoming.prefix(4)) { ev in
                         HStack(spacing: 8) {
                             RoundedRectangle(cornerRadius: 2).fill(ev.color).frame(width: 3, height: 18)
-                            Text(timeString(ev.start)).monospacedDigit().foregroundStyle(.secondary).frame(width: 74, alignment: .leading)
+                            Text(ev.start.map(timeString) ?? "").monospacedDigit().foregroundStyle(.secondary).frame(width: 74, alignment: .leading)
                             Text(ev.title).lineLimit(1)
                         }
                         .font(.callout)

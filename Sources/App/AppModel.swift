@@ -95,6 +95,17 @@ final class AppModel: ObservableObject {
         newTask(on: moment, minutes: min(m, 23 * 60 + 55))
     }
 
+    /// A new event: next whole hour (or 9 AM on other days), one hour, 10-minute heads-up.
+    func newEvent(on day: Date = Date(), minutes: Int? = nil) {
+        let now = Date()
+        let m = minutes ?? (day.isSameDay(now) ? min(23 * 60, (Calendar.current.component(.hour, from: now) + 1) * 60) : 9 * 60)
+        var t = PlanTask(title: "", startDate: day.startOfDay, timeMinutes: m, durationMinutes: 60,
+                         reminderOffsets: [10], channels: store.settings.defaultChannels, color: .teal)
+        t.kind = "event"
+        editingTask = t
+        windows.showMain()
+    }
+
     func edit(_ task: PlanTask) {
         editingTask = store.task(task.id) ?? task
         windows.showMain()

@@ -85,7 +85,7 @@ private struct MonthCell: View {
                     .frame(width: 24, height: 24)
                     .background(Circle().fill(day.isToday ? Color.accentColor : .clear))
                 Spacer()
-                let tasks = store.occurrences(on: day)
+                let tasks = store.checklist(on: day)
                 if !tasks.isEmpty && tasks.allSatisfy(\.isDone) {
                     Image(systemName: "checkmark.seal.fill").font(.caption).foregroundStyle(.green)
                         .help("Everything done")
@@ -112,7 +112,7 @@ private struct MiniChip: View {
     let item: CalendarItem
     var body: some View {
         HStack(spacing: 3) {
-            if item.isGoogle {
+            if item.isCalendarEvent {
                 Image(systemName: "calendar").font(.system(size: 7, weight: .bold)).foregroundStyle(item.color)
             } else {
                 Circle().fill(item.isDone ? Color.clear : item.color).frame(width: 6, height: 6)
@@ -137,14 +137,17 @@ struct DayPanel: View {
     let day: Date
 
     var body: some View {
-        let tasks = store.occurrences(on: day)
-        let events = google.events(on: day)
+        let tasks = store.checklist(on: day)
+        let events = schedule(on: day, store: store, google: google)
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(day.formatted(.dateTime.weekday(.wide))).foregroundStyle(.secondary)
                 Text(day.formatted(.dateTime.month(.wide).day())).font(.title2.bold())
             }
-            Button { model.newTask(on: day) } label: { Label("Add task on this day", systemImage: "plus") }
+            HStack {
+                Button { model.newTask(on: day) } label: { Label("Task", systemImage: "plus") }
+                Button { model.newEvent(on: day) } label: { Label("Event", systemImage: "calendar") }
+            }
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -159,8 +162,8 @@ struct DayPanel: View {
                     }
                     if !events.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
-                            SectionTitle(text: "Google Calendar", count: events.count)
-                            ForEach(events) { ItemChip(item: .google($0)) }
+                            SectionTitle(text: "Events", count: events.count)
+                            ForEach(events) { EventRow(ev: $0) }
                         }
                     }
                 }

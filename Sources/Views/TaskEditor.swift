@@ -40,10 +40,28 @@ struct TaskEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(isNew ? "New Task" : "Edit Task").font(.title3.bold())
+                Text(isNew ? (task.isEvent ? "New Event" : "New Task") : (task.isEvent ? "Edit Event" : "Edit Task")).font(.title3.bold())
                 Spacer()
+                Picker("", selection: Binding(get: { task.isEvent ? "event" : "task" }, set: { k in
+                    task.kind = k
+                    if k == "event" && isNew {
+                        if !hasTime { hasTime = true; time = dayAt(task.startDate, minutes: 9 * 60) }
+                        if task.durationMinutes == 30 { task.durationMinutes = 60 }
+                        task.reminderOffsets = [10]
+                    }
+                })) {
+                    Label("Task", systemImage: "checklist").tag("task")
+                    Label("Event", systemImage: "calendar").tag("event")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 180)
             }
             .padding([.horizontal, .top], 20)
+            Text(task.isEvent ? "Events show on your calendars only: no checkbox, no reflection." : "Tasks go on your checklist; checking one off asks for a short reflection.")
+                .font(.caption).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
 
             Form {
                 Section {
@@ -175,7 +193,7 @@ struct TaskEditor: View {
                 Spacer()
                 if saving { ProgressView().controlSize(.small) }
                 Button("Cancel") { model.editingTask = nil }.keyboardShortcut(.cancelAction)
-                Button(isNew ? "Add Task" : "Save") { save() }
+                Button(isNew ? (task.isEvent ? "Add Event" : "Add Task") : "Save") { save() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .disabled(task.title.trimmingCharacters(in: .whitespaces).isEmpty || saving)

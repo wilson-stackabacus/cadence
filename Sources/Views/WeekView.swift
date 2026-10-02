@@ -73,7 +73,7 @@ struct WeekView: View {
                         .foregroundStyle(isToday ? .white : .primary)
                         .frame(width: 30, height: 30)
                         .background(Circle().fill(isToday ? Color.accentColor : .clear))
-                    let open = store.occurrences(on: day).filter { !$0.isDone }.count
+                    let open = store.checklist(on: day).filter { !$0.isDone }.count
                     Text(open > 0 ? "\(open) open" : " ")
                         .font(.system(size: 9)).foregroundStyle(.secondary)
                 }
@@ -227,7 +227,7 @@ struct TimedBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 3) {
-                if item.isGoogle {
+                if item.isCalendarEvent {
                     Image(systemName: "calendar").font(.system(size: 8, weight: .bold))
                 } else if item.isDone {
                     Image(systemName: "checkmark.circle.fill").font(.system(size: 9))
@@ -244,7 +244,7 @@ struct TimedBlock: View {
         .padding(.trailing, 3)
         .padding(.vertical, 3)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(item.color.opacity(item.isDone ? 0.10 : (item.isGoogle ? 0.16 : 0.24)))
+        .background(item.color.opacity(item.isDone ? 0.10 : (item.isCalendarEvent ? 0.14 : 0.24)))
         .overlay(alignment: .leading) { Rectangle().fill(item.color).frame(width: 3) }
         .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
         .contentShape(Rectangle())

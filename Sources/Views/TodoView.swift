@@ -2,7 +2,7 @@ import SwiftUI
 
 struct TodoView: View {
     enum Mode: String, CaseIterable, Identifiable {
-        case checklist = "Upcoming checklist", tasks = "All tasks"
+        case checklist = "Upcoming checklist", tasks = "All tasks", events = "Events"
         var id: String { rawValue }
     }
     enum Range: Int, CaseIterable, Identifiable {
@@ -13,6 +13,7 @@ struct TodoView: View {
 
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var store: Store
+    @EnvironmentObject private var google: GoogleCalendar
     @State private var mode: Mode = .checklist
     @State private var range: Range = .week
     @State private var showCompleted = true
@@ -45,7 +46,11 @@ struct TodoView: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    if mode == .checklist { checklist } else { taskList }
+                    switch mode {
+                    case .checklist: checklist
+                    case .tasks: taskList
+                    case .events: eventList
+                    }
                 }
                 .padding(22)
                 .frame(maxWidth: 900, alignment: .leading)
@@ -68,7 +73,7 @@ struct TodoView: View {
         let today = Date().startOfDay
         let days = (0..<range.rawValue).map { today.adding(days: $0) }
         let groups = days.map { day in
-            (day, store.occurrences(on: day).filter { matches($0.task.title) && (showCompleted || !$0.isDone) })
+            (day, store.checklist(on: day).filter { matches($0.task.title) && (showCompleted || !$0.isDone) })
         }.filter { !$0.1.isEmpty }
         if groups.isEmpty && overdue.isEmpty {
             emptyState
@@ -104,7 +109,7 @@ struct TodoView: View {
     // MARK: Task definitions
 
     @ViewBuilder private var taskList: some View {
-        let tasks = store.tasks.filter { matches($0.title) }
+        let tasks = store.tasks.filter { $0.archived != true && !$0.isEvent && matches($0.title) }
         let repeating = tasks.filter(\.recurrence.isRepeating).sorted { $0.title < $1.title }
         let oneOff = tasks.filter { !$0.recurrence.isRepeating }.sorted { $0.startDate > $1.startDate }
         if tasks.isEmpty { emptyState }
@@ -118,6 +123,29 @@ struct TodoView: View {
             VStack(alignment: .leading, spacing: 6) {
                 SectionTitle(text: "One-time", symbol: "1.circle", count: oneOff.count)
                 Card { VStack(spacing: 0) { taskRows(oneOff) } }
+            }
+        }
+    }
+
+    @ViewBuilder private var eventList: some View {
+        let today = Date().startOfDay
+        let groups = (0..<range.rawValue).map { today.adding(days: $0) }
+            .map { ($0, schedule(on: $0, store: store, google: google).filter { matches($0.title) }) }
+            .filter { !$0.1.isEmpty }
+        if groups.isEmpty {
+            VStack(spacing: 10) {
+                Image(systemName: "calendar").font(.system(size: 36)).foregroundStyle(.secondary)
+                Text(search.isEmpty ? "No upcoming events" : "No matches").font(.title3.weight(.semibold))
+                if search.isEmpty {
+                    Text("Create one with New Event, or connect Google Calendar or Calendly in Settings.").foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 50)
+        }
+        ForEach(groups, id: \.0) { day, list in
+            VStack(alignment: .leading, spacing: 6) {
+                SectionTitle(text: dayTitle(day), symbol: day.isToday ? "sun.max" : "calendar", count: list.count)
+                Card { VStack(spacing: 0) { ForEach(list) { EventRow(ev: $0) } } }
             }
         }
     }

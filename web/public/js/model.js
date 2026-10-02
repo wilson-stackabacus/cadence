@@ -18,6 +18,9 @@ export async function stableUUID(key) {
 }
 
 export const isSilent = task => !(task.channels && task.channels.length);
+/** Events live on the calendars only: never on the checklist, no check-off, no reflection.
+ *  Imported items (Google, Calendly) are events unless you explicitly make them a task. */
+export const isEvent = task => task.kind === 'event' || (task.kind !== 'task' && Boolean(task.source));
 
 // ---------- dates ----------
 export const startOfDay = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
@@ -177,8 +180,9 @@ export function makeOccurrence(task, day) {
     id: `${task.id}|${key}`,
     start,
     end: start ? addMinutes(start, Math.max(5, task.durationMinutes || 30)) : null,
-    done: Boolean(task.completions && task.completions[key]),
-    overdue: !(task.completions && task.completions[key]) && d < startOfDay(new Date()),
+    event: isEvent(task),
+    done: !isEvent(task) && Boolean(task.completions && task.completions[key]),
+    overdue: !isEvent(task) && !(task.completions && task.completions[key]) && d < startOfDay(new Date()),
   };
 }
 

@@ -207,7 +207,7 @@ function homeView() {
   const hour = now.getHours();
   const greet = hour >= 5 && hour < 12 ? 'Good morning' : hour >= 12 && hour < 17 ? 'Good afternoon' : 'Good evening';
   const weekStart = M.startOfWeek(now);
-  const weekCount = [...Array(7)].reduce((n, _, i) => n + store.occurrencesOn(M.addDays(weekStart, i)).length, 0);
+  const weekCount = [...Array(7)].reduce((n, _, i) => n + store.tasksOn(M.addDays(weekStart, i)).length, 0);
   const overdue = store.overdue().length;
   const latest = store.sortedReflections()[0];
   const nextTimed = [...store.occurrencesOn(now), ...store.occurrencesOn(M.addDays(now, 1))]
@@ -225,7 +225,7 @@ function homeView() {
       <div class="muted" style="font-size:17px">${greet}${store.user ? `, ${esc(store.user.username)}` : ''}</div>
       <h2>${M.fmtDay(now)}</h2>
       <div class="muted">${!all.length ? 'Nothing on your checklist today.' : done === all.length ? 'Everything is checked off. Nice work.' : `${open.length} thing${open.length === 1 ? '' : 's'} left today.`}</div></div>
-      <div class="row"><button class="btn" data-act="check-in">${ic('sun')} Check in</button><button class="btn primary" data-act="new-task">${ic('plus')} New task</button></div></div>
+      <div class="row"><button class="btn" data-act="check-in">${ic('sun')} Check in</button><button class="btn" data-act="new-event">${ic('cal')} New event</button><button class="btn primary" data-act="new-task">${ic('plus')} New task</button></div></div>
 
     <div class="home-grid">
       <a class="card pad home-today" href="/app/today">
@@ -249,7 +249,7 @@ function homeView() {
     </div>
 
     <div class="tiles">
-      ${tile('week', 'week', 'Week', weekCount, 'items this week', '#0a84ff')}
+      ${tile('week', 'week', 'Week', weekCount, 'tasks this week', '#0a84ff')}
       ${tile('month', 'month', 'Month', M.fmtDay(now, { month: 'short' }), 'see the whole month', '#30b0c7')}
       ${tile('todo', 'list', 'To-Do List', store.tasks.size ? [...store.tasks.values()].filter(t => !t.archived).length : 0, overdue ? `${overdue} overdue` : 'all your tasks', '#ff9f0a')}
       ${tile('reflections', 'quote', 'Reflections', store.reflections.size, store.reflectionStreak ? `${store.reflectionStreak}-day streak` : 'your record', '#5e5ce6')}
@@ -259,15 +259,36 @@ function homeView() {
   </div>`;
 }
 
+// ---------- Events (calendar-only items: your own + imported + Google) ----------
+function scheduleOn(day) {
+  const list = [
+    ...store.eventsOn(day).map(o => ({ id: `t|${o.id}`, title: o.task.title, start: o.start, end: o.end, allDay: !o.start,
+      color: color(o.task.color), source: o.task.source, link: o.task.externalURL, notes: o.task.notes, silent: M.isSilent(o.task) })),
+    ...store.googleEventsOn(day).map(e => ({ id: `g|${e.id}`, title: e.title, start: e.isAllDay ? null : e.startDate, end: e.isAllDay ? null : e.endDate,
+      allDay: e.isAllDay, color: e.colorHex || '#0a84ff', source: 'google', link: e.link, notes: e.location })),
+  ];
+  return list.sort((a, b) => (a.allDay === b.allDay ? (a.start || 0) - (b.start || 0) : a.allDay ? -1 : 1));
+}
+
+function eventRow(ev) {
+  const src = ev.source === 'calendly' ? `<span>${ic('people')}Calendly</span>` : ev.source === 'google' ? `<span>${ic('cal')}Google</span>` : '';
+  return `<div class="crow erow" data-act="detail" data-item="${esc(ev.id)}">
+    <span class="evt-time">${ev.allDay ? 'All day' : `${M.fmtTime(ev.start)}<small>${M.fmtTime(ev.end)}</small>`}</span>
+    <span class="bar" style="background:${ev.color}"></span>
+    <div class="grow"><div class="title ellipsis">${esc(ev.title)}</div><div class="meta">${src}${ev.notes ? `<span class="ellipsis">${esc(ev.notes)}</span>` : ''}${ev.silent === false ? `<span title="Reminds you">${ic('bell')}</span>` : ''}</div></div>
+    ${ev.link ? `<a href="${esc(ev.link)}" target="_blank" rel="noopener" title="Open">${ic('link')}</a>` : ''}
+  </div>`;
+}
+
 // ---------- Today ----------
 function todayView() {
   const today = new Date();
-  const items = store.occurrencesOn(today), overdue = store.overdue(), all = [...overdue, ...items];
+  const items = store.tasksOn(today), overdue = store.overdue(), all = [...overdue, ...items];
   const done = all.filter(o => o.done).length;
   const hour = today.getHours();
   const greet = hour >= 5 && hour < 12 ? 'Good morning' : hour >= 12 && hour < 17 ? 'Good afternoon' : 'Good evening';
   const status = !all.length ? 'A clear day.' : done === all.length ? 'Everything is checked off. Nice work.' : `${all.length - done} of ${all.length} left to check off.`;
-  const events = store.googleEventsOn(today);
+  const events = scheduleOn(today);
   const s = store.settings;
   const perm = 'Notification' in window ? Notification.permission : 'unsupported';
   return `<div class="page stack" style="padding-top:28px">
@@ -284,11 +305,9 @@ function todayView() {
       <div class="card">${items.length ? items.map(o => crow(o)).join('')
         : `<div class="crow"><span style="font-size:22px;color:var(--orange)">${ic('sun')}</span><div><div>Nothing scheduled for today.</div><div class="small muted">Add a task above, or use New Task for one with a time and repeat schedule.</div></div></div>`}</div>
       <div class="small muted" style="margin-top:6px">Checking an item off asks for a reflection of at least ${s.minReflectionWords} words. They’re saved under Reflections.</div></div>
-    ${store.google.connected && s.showGoogleEvents ? `<div><div class="section-title">${ic('cal')}On your Google Calendar <span class="count">${events.length}</span></div>
-      <div class="card">${events.length ? events.map(e => `<div class="crow"><span class="bar" style="background:${e.colorHex || '#0a84ff'}"></span>
-        <span class="muted" style="width:150px">${e.isAllDay ? 'All day' : `${M.fmtTime(e.startDate)} – ${M.fmtTime(e.endDate)}`}</span>
-        <span class="grow ellipsis">${esc(e.title)}</span>${e.link ? `<a href="${esc(e.link)}" target="_blank" rel="noopener" title="Open in Google Calendar">${ic('link')}</a>` : ''}</div>`).join('')
-        : '<div class="crow muted">No events today.</div>'}</div></div>` : ''}
+    <div><div class="section-title">${ic('cal')}Schedule <span class="count">${events.length}</span><span class="grow"></span>
+      <button class="btn sm" data-act="new-event">${ic('plus')} New event</button></div>
+      <div class="card">${events.length ? events.map(eventRow).join('') : '<div class="crow muted">No events today. Events show on your calendars but never on the checklist.</div>'}</div></div>
     <div class="callout"><span class="big">${ic('bell')}</span><div class="grow">
       <b>${s.nudgeEnabled ? `Checklist reminder every ${s.nudgeIntervalMinutes} min while this page is open` : 'Recurring checklist reminders are off'}</b>
       <div class="small muted">${!reminders.enabled ? 'Browser reminders are off on this device (Settings).' : s.nudgeEnabled ? `Next one around ${M.fmtTime(reminders.nextNudge)}. You’ll also get a check-in when you come back to your computer.` : 'Turn them on in Settings.'}</div></div>
@@ -299,7 +318,7 @@ function todayView() {
 // ---------- Week ----------
 function calItemsTimed(day) {
   const items = [];
-  for (const o of store.occurrencesOn(day)) if (o.start) items.push({ kind: 'task', o, start: o.start, end: o.end, title: o.task.title, color: color(o.task.color), done: o.done, id: `t|${o.id}` });
+  for (const o of store.occurrencesOn(day)) if (o.start) items.push({ kind: o.event ? 'event' : 'task', o, start: o.start, end: o.end, title: o.task.title, color: color(o.task.color), done: o.done, id: `t|${o.id}` });
   for (const e of store.googleEventsOn(day)) if (!e.isAllDay) items.push({ kind: 'google', e, start: e.startDate, end: e.endDate, title: e.title, color: e.colorHex || '#0a84ff', done: false, id: `g|${e.id}` });
   items.sort((a, b) => a.start - b.start || b.end - a.end);
   // Greedy lanes inside clusters of overlapping items.
@@ -315,13 +334,13 @@ function calItemsTimed(day) {
   return out;
 }
 
-const chipFor = it => `<div class="chip ${it.done ? 'done' : ''}" style="background:${tint(it.color, it.kind === 'google' ? .12 : .18)}" data-act="detail" data-item="${esc(it.id)}">
-  ${it.kind === 'google' ? `<span style="color:${it.color}">${ic('cal')}</span>` : `<span class="dot" style="border-color:${it.color};background:${it.done ? it.color : 'transparent'}"></span>`}
+const chipFor = it => `<div class="chip ${it.done ? 'done' : ''}" style="background:${tint(it.color, it.kind === 'task' ? .18 : .12)}" data-act="detail" data-item="${esc(it.id)}">
+  ${it.kind !== 'task' ? `<span style="color:${it.color}">${ic('cal')}</span>` : `<span class="dot" style="border-color:${it.color};background:${it.done ? it.color : 'transparent'}"></span>`}
   <span>${it.start && it.kind !== 'allday' ? `<span class="muted">${M.fmtTime(it.start)}</span> ` : ''}${esc(it.title)}</span></div>`;
 
 function allDayItems(day) {
   return [
-    ...store.occurrencesOn(day).filter(o => !o.start).map(o => ({ kind: 'task', o, title: o.task.title, color: color(o.task.color), done: o.done, id: `t|${o.id}` })),
+    ...store.occurrencesOn(day).filter(o => !o.start).map(o => ({ kind: o.event ? 'event' : 'task', o, title: o.task.title, color: color(o.task.color), done: o.done, id: `t|${o.id}` })),
     ...store.googleEventsOn(day).filter(e => e.isAllDay).map(e => ({ kind: 'google', e, title: e.title, color: e.colorHex || '#0a84ff', id: `g|${e.id}` })),
   ];
 }
@@ -337,7 +356,7 @@ function weekView() {
       <div class="row"><button class="btn icon" data-act="week-prev" title="Previous week">${ic('left')}</button>
       <button class="btn" data-act="week-today">Today</button><button class="btn icon" data-act="week-next" title="Next week">${ic('right')}</button></div></div>
     <div class="week-head"><div></div>${days.map(d => {
-      const open = store.occurrencesOn(d).filter(o => !o.done).length;
+      const open = store.tasksOn(d).filter(o => !o.done).length;
       return `<div class="d ${M.isToday(d) ? 'today' : ''}"><div class="dow">${M.WEEKDAY_SHORT[d.getDay()].toUpperCase()}</div><div class="num">${d.getDate()}</div><div class="open">${open ? `${open} open` : ''}</div></div>`;
     }).join('')}</div>
     <div class="week-allday"><div class="lab">any<br>time</div>${days.map(d => {
@@ -351,11 +370,11 @@ function weekView() {
           const dayStart = M.startOfDay(d);
           const top = Math.max(0, (p.start - dayStart) / 3_600_000) * HOUR;
           const bottom = Math.min(24, (p.end - dayStart) / 3_600_000) * HOUR;
-          return `<div class="block ${p.done ? 'done' : ''}" data-item="${esc(p.id)}" data-start="${+p.start}" data-end="${+p.end}"
+          return `<div class="block ${p.done ? 'done' : ''} ${p.kind !== 'task' ? 'evt' : ''}" data-item="${esc(p.id)}" data-start="${+p.start}" data-end="${+p.end}"
             title="Click for details · double-click to add a task at this time"
             style="top:${top}px;height:${Math.max(20, bottom - top - 1)}px;left:calc(${(p.lane * 100) / p.lanes}% + 2px);width:calc(${100 / p.lanes}% - 4px);
-            background:${tint(p.color, p.done ? .1 : p.kind === 'google' ? .16 : .24)};border-color:${p.color}">
-            <b>${p.kind === 'google' ? `${ic('cal')} ` : ''}${esc(p.title)}</b>${M.fmtTime(p.start)}</div>`;
+            background:${tint(p.color, p.done ? .1 : p.kind !== 'task' ? .14 : .24)};border-color:${p.color}">
+            <b>${p.kind !== 'task' ? `${ic('cal')} ` : ''}${esc(p.title)}</b>${M.fmtTime(p.start)}</div>`;
         }).join('')}
         ${M.isToday(d) ? `<div class="nowline" style="top:${M.minutesOf(now) / 60 * HOUR}px"></div>` : ''}
       </div>`).join('')}
@@ -370,20 +389,20 @@ function monthView() {
   store.ensureGoogle(days[0], M.addDays(days[41], 1));
   const cells = days.map(d => {
     const items = [
-      ...store.occurrencesOn(d).map(o => ({ kind: 'task', title: o.task.title, color: color(o.task.color), done: o.done, id: `t|${o.id}` })),
+      ...store.occurrencesOn(d).map(o => ({ kind: o.event ? 'event' : 'task', title: o.task.title, color: color(o.task.color), done: o.done, id: `t|${o.id}` })),
       ...store.googleEventsOn(d).map(e => ({ kind: 'google', title: e.title, color: e.colorHex || '#0a84ff', id: `g|${e.id}` })),
     ];
     const max = 4, shown = items.length > max ? max - 1 : max;
-    const tasks = store.occurrencesOn(d);
+    const tasks = store.tasksOn(d);
     const allDone = tasks.length && tasks.every(o => o.done);
     return `<div class="mcell ${d.getMonth() !== ui.month.getMonth() ? 'out' : ''} ${M.isToday(d) ? 'today' : ''} ${M.sameDay(d, ui.selectedDay) ? 'sel' : ''}" data-act="select-day" data-day="${M.dateKey(d)}">
       <div class="row"><span class="n">${d.getDate()}</span><span class="grow"></span>${allDone ? `<span class="green small" title="Everything done">${ic('check')}</span>` : ''}</div>
       ${items.slice(0, shown).map(it => `<div class="chip ${it.done ? 'done' : ''}" style="background:${tint(it.color, .13)}">
-        ${it.kind === 'google' ? `<span style="color:${it.color}">${ic('cal')}</span>` : `<span class="dot" style="border-color:${it.color};background:${it.done ? 'transparent' : it.color}"></span>`}<span>${esc(it.title)}</span></div>`).join('')}
+        ${it.kind !== 'task' ? `<span style="color:${it.color}">${ic('cal')}</span>` : `<span class="dot" style="border-color:${it.color};background:${it.done ? 'transparent' : it.color}"></span>`}<span>${esc(it.title)}</span></div>`).join('')}
       ${items.length > shown ? `<div class="more">+${items.length - shown} more</div>` : ''}</div>`;
   }).join('');
   const sel = ui.selectedDay;
-  const tasks = store.occurrencesOn(sel), events = store.googleEventsOn(sel);
+  const tasks = store.tasksOn(sel), events = scheduleOn(sel);
   return `<div class="month"><div class="month-main">
     <div class="header"><div class="grow"><h1>${M.fmtDay(ui.month, { month: 'long', year: 'numeric' })}</h1><div class="sub">Click a day to see it, double-click to add a task.</div></div>
       <div class="row"><button class="btn icon" data-act="month-prev">${ic('left')}</button><button class="btn" data-act="month-today">Today</button><button class="btn icon" data-act="month-next">${ic('right')}</button></div></div>
@@ -391,11 +410,12 @@ function monthView() {
     <div class="mgrid">${cells}</div></div>
     <aside class="daypanel stack" style="gap:12px">
       <div><div class="muted">${M.fmtDay(sel, { weekday: 'long' })}</div><h2 style="margin:0">${M.fmtDay(sel, { month: 'long', day: 'numeric' })}</h2></div>
-      <button class="btn" data-act="new-task" data-day="${M.dateKey(sel)}">${ic('plus')} Add task on this day</button>
+      <div class="row"><button class="btn" data-act="new-task" data-day="${M.dateKey(sel)}">${ic('plus')} Task</button>
+        <button class="btn" data-act="new-event" data-day="${M.dateKey(sel)}">${ic('cal')} Event</button></div>
       ${!tasks.length && !events.length ? '<div class="muted">Nothing planned.</div>' : ''}
       ${tasks.length ? `<div><div class="section-title">Checklist <span class="count">${tasks.length}</span></div>${tasks.map(o => crow(o, { compact: true })).join('')}</div>` : ''}
-      ${events.length ? `<div><div class="section-title">Google Calendar <span class="count">${events.length}</span></div>
-        <div class="stack" style="gap:4px">${events.map(e => chipFor({ kind: 'google', e, title: e.title, color: e.colorHex || '#0a84ff', id: `g|${e.id}`, start: e.isAllDay ? null : e.startDate })).join('')}</div></div>` : ''}
+      ${events.length ? `<div><div class="section-title">Events <span class="count">${events.length}</span></div>
+        <div>${events.map(eventRow).join('')}</div></div>` : ''}
     </aside></div>`;
 }
 
@@ -407,7 +427,7 @@ function todoView() {
   if (t.mode === 'checklist') {
     const overdue = store.overdue().filter(o => match(o.task.title));
     const groups = [...Array(t.range)].map((_, i) => M.addDays(M.startOfDay(new Date()), i))
-      .map(d => [d, store.occurrencesOn(d).filter(o => match(o.task.title) && (t.showCompleted || !o.done))])
+      .map(d => [d, store.tasksOn(d).filter(o => match(o.task.title) && (t.showCompleted || !o.done))])
       .filter(([, list]) => list.length);
     const group = (title, icon, list, showDate) => `<div><div class="section-title">${ic(icon)}${title}
       <span class="small muted" style="font-weight:400">${list.filter(o => o.done).length}/${list.length} done</span></div>
@@ -418,8 +438,17 @@ function todoView() {
       body += group(title, M.isToday(d) ? 'sun' : 'cal', list, false);
     }
     if (!body) body = empty('list', t.search ? 'No matches' : 'No tasks yet', t.search ? '' : 'Create a task with New Task. Tasks can repeat daily, on certain weekdays, monthly or yearly.');
+  } else if (t.mode === 'events') {
+    const days = [...Array(t.range)].map((_, i) => M.addDays(M.startOfDay(new Date()), i));
+    for (const d of days) {
+      const list = scheduleOn(d).filter(ev => match(ev.title));
+      if (!list.length) continue;
+      const title = M.isToday(d) ? 'Today' : M.daysBetween(new Date(), d) === 1 ? 'Tomorrow' : M.fmtDay(d, { weekday: 'long', month: 'short', day: 'numeric' });
+      body += `<div><div class="section-title">${ic(M.isToday(d) ? 'sun' : 'cal')}${title}<span class="count">${list.length}</span></div><div class="card">${list.map(eventRow).join('')}</div></div>`;
+    }
+    if (!body) body = empty('cal', t.search ? 'No matches' : 'No upcoming events', t.search ? '' : 'Create one with New event, or connect Google Calendar or Calendly in Settings.');
   } else {
-    const tasks = [...store.tasks.values()].filter(x => match(x.title));
+    const tasks = [...store.tasks.values()].filter(x => !x.archived && !M.isEvent(x) && match(x.title));
     const repeating = tasks.filter(x => x.recurrence.frequency !== 'none').sort((a, b) => a.title.localeCompare(b.title));
     const once = tasks.filter(x => x.recurrence.frequency === 'none').sort((a, b) => b.startDate.localeCompare(a.startDate));
     const row = x => {
@@ -442,14 +471,15 @@ function todoView() {
   }
   return `<div class="header"><div class="grow"><h1>To-Do List</h1><div class="sub">Every task in one place, including each repeat.</div></div>
     <div class="seg"><button class="${t.mode === 'checklist' ? 'on' : ''}" data-act="todo-mode" data-mode="checklist">Upcoming checklist</button>
-    <button class="${t.mode === 'tasks' ? 'on' : ''}" data-act="todo-mode" data-mode="tasks">All tasks</button></div></div>
+    <button class="${t.mode === 'tasks' ? 'on' : ''}" data-act="todo-mode" data-mode="tasks">All tasks</button>
+    <button class="${t.mode === 'events' ? 'on' : ''}" data-act="todo-mode" data-mode="events">Events</button></div></div>
     <div class="page stack">
       <div class="row" style="flex-wrap:wrap">
         <input id="todoSearch" class="input" style="max-width:260px" placeholder="Search" value="${esc(t.search)}" data-bind="todoSearch">
-        ${t.mode === 'checklist' ? `<select class="input" style="width:auto" data-bind="todoRange">
+        ${t.mode !== 'tasks' ? `<select class="input" style="width:auto" data-bind="todoRange">
           ${[7, 14, 31].map(n => `<option value="${n}" ${t.range === n ? 'selected' : ''}>Next ${n} days</option>`).join('')}</select>
-          <label class="check"><input type="checkbox" data-bind="todoCompleted" ${t.showCompleted ? 'checked' : ''}>Show completed</label>` : ''}
-        <span class="grow"></span><button class="btn" data-act="new-task">${ic('plus')} New Task</button></div>
+          ${t.mode === 'checklist' ? `<label class="check"><input type="checkbox" data-bind="todoCompleted" ${t.showCompleted ? 'checked' : ''}>Show completed</label>` : ''}` : ''}
+        <span class="grow"></span>${t.mode === 'events' ? `<button class="btn" data-act="new-event">${ic('plus')} New event</button>` : `<button class="btn" data-act="new-task">${ic('plus')} New Task</button>`}</div>
       ${body}</div>`;
 }
 
@@ -734,7 +764,7 @@ function reflectionDialog(o, ctx) {
 
 function checkInDialog(m) {
   const items = store.todayChecklist(), done = items.filter(o => o.done).length;
-  const upcoming = store.googleEventsOn(new Date()).filter(e => !e.isAllDay && e.endDate > new Date());
+  const upcoming = scheduleOn(new Date()).filter(e => !e.allDay && e.end > new Date()).map(e => ({ title: e.title, startDate: e.start, colorHex: e.color }));
   return `<div class="dialog"><div class="body">
     <div class="row" style="gap:14px"><span class="badge-icon" style="width:46px;height:46px;background:linear-gradient(135deg,#ffb340,#ff7a00)">${ic('sun')}</span>
       <div class="grow"><h2>${esc(m.title)}</h2><div class="muted">${M.fmtDay(new Date())} · ${!items.length ? 'nothing scheduled' : done === items.length ? 'all done' : `${items.length - done} left`}</div></div>
@@ -768,7 +798,19 @@ function detailDialog(m) {
       ${opts.map(([l, d]) => `<button class="btn sm" data-act="new-at" data-at="${+d}">${l} (${M.fmtTime(d)})</button>`).join('')}</div></div>`;
   })() : '';
   let body = '', buttons = '';
-  if (it.kind === 'task') {
+  if (it.kind === 'task' && it.o.event) {
+    const o = it.o, t = o.task;
+    const from = t.source === 'calendly' ? 'From Calendly' : t.source === 'google' ? 'From Google Calendar' : 'Event';
+    body = `<div class="muted">${ic('cal')} ${M.fmtDay(o.day)}</div>
+      <div class="muted">${ic('clock')} ${o.start ? `${M.fmtTime(o.start)} – ${M.fmtTime(o.end)}` : 'All day'}</div>
+      ${t.recurrence.frequency !== 'none' ? `<div class="muted">${ic('repeat')} ${esc(M.recurrenceSummary(t.recurrence, t.startDate))}</div>` : ''}
+      ${t.notes ? `<div>${esc(t.notes)}</div>` : ''}
+      <div class="small muted">${from} · ${M.isSilent(t) ? 'no reminders' : 'reminds you'} · not on your checklist</div>`;
+    buttons = `${t.externalURL ? `<a class="btn" href="${esc(t.externalURL)}" target="_blank" rel="noopener">${ic('link')} Open</a>` : ''}
+      <button class="btn" data-act="edit" data-task="${t.id}">Edit…</button>
+      <button class="btn" data-act="make-kind" data-task="${t.id}" data-kind="task" title="Put it on your checklist">${ic('list')} Make it a task</button>
+      <button class="btn danger" data-act="delete-task" data-task="${t.id}">${t.source ? 'Hide' : 'Delete'}</button>`;
+  } else if (it.kind === 'task') {
     const o = it.o, t = o.task, r = store.reflectionFor(o);
     body = `<div class="muted">${ic('cal')} ${M.fmtDay(o.day)}</div>
       <div class="muted">${ic('clock')} ${o.start ? `${M.fmtTime(o.start)} – ${M.fmtTime(o.end)}` : 'Any time'}</div>
@@ -776,7 +818,8 @@ function detailDialog(m) {
       ${t.notes ? `<div>${esc(t.notes)}</div>` : ''}${r ? `<div class="muted" style="font-style:italic">“${esc(r.text)}”</div>` : ''}`;
     buttons = `${o.done ? `<button class="btn" data-act="toggle" data-occ="${esc(o.id)}">Mark not done</button>` : `<button class="btn primary" data-act="toggle" data-occ="${esc(o.id)}">Complete…</button>`}
       <button class="btn" data-act="edit" data-task="${t.id}">Edit…</button>
-      ${t.recurrence.frequency !== 'none' ? `<button class="btn" data-act="skip" data-occ="${esc(o.id)}">Skip</button>` : ''}`;
+      ${t.recurrence.frequency !== 'none' ? `<button class="btn" data-act="skip" data-occ="${esc(o.id)}">Skip</button>` : ''}
+      ${t.source ? `<button class="btn" data-act="make-kind" data-task="${t.id}" data-kind="event" title="Take it off your checklist">${ic('cal')} Make it an event</button>` : ''}`;
   } else {
     const e = it.e;
     body = `<div class="muted">${ic('cal')} ${M.fmtDay(e.startDate)}</div>${!e.isAllDay ? `<div class="muted">${ic('clock')} ${M.fmtTime(e.startDate)} – ${M.fmtTime(e.endDate)}</div>` : ''}
@@ -822,7 +865,10 @@ function editorDialog(m) {
   const preview = { ...r, end: m.endMode === 'onDate' ? { onDate: { _0: M.iso(M.parseKey(m.endDate)) } } : m.endMode === 'afterCount' ? { afterCount: { _0: m.endCount } } : { never: {} } };
   const offCheck = o => `<label class="check"><input type="checkbox" data-edit="offset" value="${o}" ${d.reminderOffsets.includes(o) ? 'checked' : ''}>${M.offsetLabel(o)}</label>`;
   return `<form class="dialog" data-form="editor"><div class="body">
-    <h2>${m.isNew ? 'New Task' : 'Edit Task'}</h2>
+    <div class="row"><h2 class="grow">${m.isNew ? (M.isEvent(d) ? 'New Event' : 'New Task') : (M.isEvent(d) ? 'Edit Event' : 'Edit Task')}</h2>
+      <div class="seg"><button type="button" class="${M.isEvent(d) ? '' : 'on'}" data-act="edit-kind" data-kind="task">${ic('list')} Task</button>
+      <button type="button" class="${M.isEvent(d) ? 'on' : ''}" data-act="edit-kind" data-kind="event">${ic('cal')} Event</button></div></div>
+    <div class="small muted" style="margin-top:-6px">${M.isEvent(d) ? 'Events show on your calendars only: no checkbox, no reflection.' : 'Tasks go on your checklist; checking one off asks for a short reflection.'}</div>
     <label class="field"><span>Title</span><input class="input" data-edit="title" value="${esc(d.title)}" placeholder="What do you need to do?" autofocus required></label>
     <label class="field"><span>Notes</span><textarea class="input" data-edit="notes" rows="2" placeholder="Optional details">${esc(d.notes)}</textarea></label>
     <div class="fieldset"><div class="legend">When</div>
@@ -970,6 +1016,14 @@ function newTaskAt(day, minutes) {
   openEditor(M.newTask({ startDate: M.iso(M.startOfDay(day)), ...(minutes != null ? { timeMinutes: minutes } : {}), channels: [...store.settings.defaultChannels] }), true);
 }
 
+/** A new event defaults to the next whole hour, one hour long, with a 10-minute heads-up. */
+function newEventAt(day, minutes) {
+  const now = new Date();
+  const m = minutes ?? (M.sameDay(day, now) ? Math.min(23 * 60, (now.getHours() + 1) * 60) : 9 * 60);
+  openEditor(M.newTask({ kind: 'event', color: 'teal', startDate: M.iso(M.startOfDay(day)), timeMinutes: m, durationMinutes: 60,
+    reminderOffsets: [10], channels: [...store.settings.defaultChannels] }), true);
+}
+
 function toggleOcc(id, ctx) {
   const o = findOcc(id);
   if (!o) return;
@@ -987,6 +1041,26 @@ function confirmThen(title, text, yes, fn) { openModal({ type: 'confirm', title,
 
 const actions = {
   'new-task': el => newTaskAt(el.dataset.day ? M.parseKey(el.dataset.day) : new Date()),
+  'new-event': el => newEventAt(el.dataset.day ? M.parseKey(el.dataset.day) : new Date()),
+  'make-kind': el => {
+    const t = store.tasks.get(el.dataset.task);
+    if (!t) return;
+    store.upsertTask({ ...t, kind: el.dataset.kind });
+    if (ui.modal) closeModal();
+    toast(el.dataset.kind === 'task' ? `“${t.title}” is now on your checklist` : `“${t.title}” is now an event`, { icon: el.dataset.kind === 'task' ? 'list' : 'cal',
+      undo: () => store.upsertTask({ ...store.tasks.get(t.id), kind: t.kind }) });
+  },
+  'edit-kind': el => {
+    readEditorInputs();
+    const m = ui.modal, k = el.dataset.kind;
+    m.draft.kind = k;
+    if (k === 'event' && m.isNew) {
+      if (!m.hasTime) { m.hasTime = true; m.time = '09:00'; }
+      if (m.draft.durationMinutes === 30) m.draft.durationMinutes = 60;
+      m.draft.reminderOffsets = [10];
+    }
+    renderModal();
+  },
   'new-at': el => { const d = new Date(Number(el.dataset.at)); newTaskAt(d, Math.min(1435, Math.floor(M.minutesOf(d) / 5) * 5)); },
   edit: el => { const t = store.tasks.get(el.dataset.task); if (t) openEditor(t, false); },
   toggle: el => toggleOcc(el.dataset.occ, el.dataset.ctx),

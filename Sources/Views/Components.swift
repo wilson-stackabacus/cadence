@@ -358,6 +358,11 @@ enum CalendarItem: Identifiable, Hashable {
         if case .google = self { return true }
         return false
     }
+    /// Shown as an event (Google event or a Cadence event): no checkbox, calendar styling.
+    var isCalendarEvent: Bool {
+        if case .task(let o) = self { return o.isEvent }
+        return true
+    }
 }
 
 /// Popover shown when clicking an item on the week or month calendar.
@@ -374,6 +379,33 @@ struct ItemDetail: View {
                 Text(item.title).font(.headline).lineLimit(2)
             }
             switch item {
+            case .task(let occ) where occ.isEvent:
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(occ.day.formatted(.dateTime.weekday(.wide).month().day()), systemImage: "calendar")
+                    if let s = occ.start, let e = occ.end {
+                        Label("\(timeString(s)) – \(timeString(e))", systemImage: "clock")
+                    } else {
+                        Label("All day", systemImage: "sun.horizon")
+                    }
+                    if occ.task.recurrence.isRepeating {
+                        Label(occ.task.recurrence.summary(start: occ.task.startDate), systemImage: "repeat")
+                    }
+                    if !occ.task.notes.isEmpty { Text(occ.task.notes).foregroundStyle(.secondary).padding(.top, 2) }
+                    Text("\(occ.task.source == "calendly" ? "From Calendly" : occ.task.source == "google" ? "From Google Calendar" : "Event") · \(occ.task.isSilent ? "no reminders" : "reminds you") · not on your checklist")
+                        .font(.caption).foregroundStyle(.secondary).padding(.top, 2)
+                }
+                .font(.callout)
+                HStack {
+                    if let u = occ.task.externalURL.flatMap(URL.init(string:)) { Link("Open", destination: u) }
+                    Button("Edit…") { dismiss(); DispatchQueue.main.async { model.edit(occ.task) } }
+                    Button("Make it a task") {
+                        if var t = store.task(occ.task.id) { t.kind = "task"; store.upsert(t) }
+                        dismiss()
+                    }
+                    .help("Put it on your checklist")
+                    Button(occ.task.isImported ? "Hide" : "Delete", role: .destructive) { store.delete(taskID: occ.task.id); dismiss() }
+                }
+                .controlSize(.small)
             case .task(let occ):
                 VStack(alignment: .leading, spacing: 4) {
                     Label(occ.day.formatted(.dateTime.weekday(.wide).month().day()), systemImage: "calendar")
@@ -401,6 +433,13 @@ struct ItemDetail: View {
                     Button("Edit…") { dismiss(); DispatchQueue.main.async { model.edit(occ.task) } }
                     if occ.task.recurrence.isRepeating {
                         Button("Skip") { store.skip(occ); dismiss() }
+                    }
+                    if occ.task.isImported {
+                        Button("Make it an event") {
+                            if var t = store.task(occ.task.id) { t.kind = "event"; store.upsert(t) }
+                            dismiss()
+                        }
+                        .help("Take it off your checklist")
                     }
                 }
                 .controlSize(.small)
@@ -452,6 +491,73 @@ struct AddDuringMenu: View {
     }
 }
 
+// MARK: - Schedule (events only: Cadence events + Google events)
+
+struct ScheduleItem: Identifiable {
+    let item: CalendarItem
+    let title: String
+    let start: Date?
+    let end: Date?
+    let color: Color
+    let source: String?
+    let link: URL?
+    let notes: String?
+    var id: String { item.id }
+}
+
+@MainActor
+func schedule(on day: Date, store: Store, google: GoogleCalendar) -> [ScheduleItem] {
+    let own = store.events(on: day).map { o in
+        ScheduleItem(item: .task(o), title: o.task.title, start: o.start, end: o.end, color: o.task.color.color,
+                     source: o.task.source, link: o.task.externalURL.flatMap(URL.init(string:)), notes: o.task.notes.isEmpty ? nil : o.task.notes)
+    }
+    let g = google.events(on: day).map { e in
+        ScheduleItem(item: .google(e), title: e.title, start: e.isAllDay ? nil : e.start, end: e.isAllDay ? nil : e.end, color: e.color,
+                     source: "google", link: e.link, notes: e.location)
+    }
+    return (own + g).sorted {
+        switch ($0.start, $1.start) {
+        case let (a?, b?): return a < b
+        case (nil, _?): return true
+        default: return false
+        }
+    }
+}
+
+struct EventRow: View {
+    let ev: ScheduleItem
+    @State private var showing = false
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 0) {
+                if let s = ev.start {
+                    Text(timeString(s)).font(.callout.monospacedDigit())
+                    if let e = ev.end { Text(timeString(e)).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
+                } else {
+                    Text("All day").font(.callout)
+                }
+            }
+            .frame(width: 66, alignment: .leading)
+            RoundedRectangle(cornerRadius: 2).fill(ev.color).frame(width: 3, height: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(ev.title).fontWeight(.medium).lineLimit(1)
+                HStack(spacing: 8) {
+                    if ev.source == "calendly" { Label("Calendly", systemImage: "person.2") }
+                    if ev.source == "google" { Label("Google", systemImage: "calendar") }
+                    if let n = ev.notes { Text(n).lineLimit(1) }
+                }
+                .font(.caption).foregroundStyle(.secondary).labelStyle(CompactLabelStyle())
+            }
+            Spacer()
+            if let link = ev.link { Link(destination: link) { Image(systemName: "arrow.up.right.square") }.help("Open") }
+        }
+        .padding(.vertical, 5)
+        .contentShape(Rectangle())
+        .onTapGesture { showing = true }
+        .popover(isPresented: $showing, arrowEdge: .trailing) { ItemDetail(item: ev.item) { showing = false } }
+    }
+}
+
 /// A compact one-line chip for month cells and all-day rows.
 struct ItemChip: View {
     let item: CalendarItem
@@ -459,7 +565,7 @@ struct ItemChip: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            if item.isGoogle {
+            if item.isCalendarEvent {
                 Image(systemName: "calendar").font(.system(size: 8, weight: .bold)).foregroundStyle(item.color)
             } else {
                 Image(systemName: item.isDone ? "checkmark.circle.fill" : "circle")
@@ -475,7 +581,7 @@ struct ItemChip: View {
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 1.5)
-        .background(RoundedRectangle(cornerRadius: 4).fill(item.color.opacity(item.isGoogle ? 0.10 : 0.16)))
+        .background(RoundedRectangle(cornerRadius: 4).fill(item.color.opacity(item.isCalendarEvent ? 0.10 : 0.16)))
         .contentShape(Rectangle())
         .onTapGesture { showing = true }
         .popover(isPresented: $showing, arrowEdge: .trailing) { ItemDetail(item: item) { showing = false } }

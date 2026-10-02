@@ -115,6 +115,11 @@ export class Reminders {
 }
 
 function reminderContent(occ, offset) {
+  if (occ.event) {
+    const when = occ.start ? (offset === 0 ? `Starting now (${M.fmtTime(occ.start)})` : offset < 0 ? `${M.offsetLabel(offset)} (until ${M.fmtTime(occ.end)})` : `Starts at ${M.fmtTime(occ.start)} — ${M.offsetLabel(offset)}`) : 'Today';
+    return { kind: 'event', title: occ.task.title, body: when + (occ.task.notes ? ` · ${occ.task.notes}` : ''),
+      tint: M.COLORS[occ.task.color] || '#0a84ff', tag: occ.id };
+  }
   let body;
   if (occ.start) {
     body = offset < 0 ? `Check-in: ${M.offsetLabel(offset)} (until ${M.fmtTime(occ.end)})`

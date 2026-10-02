@@ -29,7 +29,7 @@ struct HomeView: View {
                     .frame(width: 300)
                 }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
-                    tile(.week, "\(weekCount(now))", "items this week", .blue)
+                    tile(.week, "\(weekCount(now))", "tasks this week", .blue)
                     tile(.month, now.formatted(.dateTime.month(.abbreviated)), "see the whole month", .teal)
                     tile(.todo, "\(store.tasks.filter { $0.archived != true }.count)", overdue > 0 ? "\(overdue) overdue" : "all your tasks", .orange)
                     tile(.reflections, "\(store.reflections.count)", store.reflectionStreak > 0 ? "\(store.reflectionStreak)-day streak" : "your record", .indigo)
@@ -70,6 +70,7 @@ struct HomeView: View {
             }
             Spacer()
             Button { engine.triggerCheckIn(reason: .manual) } label: { Label("Check in", systemImage: "sun.max") }
+            Button { model.newEvent() } label: { Label("New Event", systemImage: "calendar") }
             Button { model.newTask() } label: { Label("New Task", systemImage: "plus") }
                 .buttonStyle(.borderedProminent)
         }
@@ -180,7 +181,7 @@ struct HomeView: View {
 
     private func weekCount(_ now: Date) -> Int {
         let start = now.startOfWeek
-        return (0..<7).reduce(0) { $0 + store.occurrences(on: start.adding(days: $1)).count }
+        return (0..<7).reduce(0) { $0 + store.checklist(on: start.adding(days: $1)).count }
     }
 
     private func greeting(_ now: Date) -> String {

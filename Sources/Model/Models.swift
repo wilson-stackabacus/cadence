@@ -190,9 +190,14 @@ struct PlanTask: Codable, Identifiable, Hashable {
     /// Imported items are hidden instead of deleted, so the next import doesn't bring them back.
     var archived: Bool?
 
-    /// No channels = a silent task: it stays on the checklist but never pings.
+    /// "task" or "event"; nil means: event if imported, otherwise task.
+    var kind: String?
+
+    /// No channels = a silent item: it never pings.
     var isSilent: Bool { channels.isEmpty }
     var isImported: Bool { source != nil }
+    /// Events live on the calendars only: never on the checklist, no check-off, no reflection.
+    var isEvent: Bool { kind == "event" || (kind != "task" && source != nil) }
 }
 
 /// One concrete instance of a (possibly repeating) task on a given day.
@@ -204,8 +209,9 @@ struct Occurrence: Identifiable, Hashable {
     var id: String { "\(task.id.uuidString)|\(key)" }
     var start: Date? { task.timeMinutes.map { dayAt(day, minutes: $0) } }
     var end: Date? { start?.adding(minutes: max(5, task.durationMinutes)) }
-    var isDone: Bool { task.completions[key] != nil }
-    var isOverdue: Bool { !isDone && day < Date().startOfDay }
+    var isEvent: Bool { task.isEvent }
+    var isDone: Bool { !task.isEvent && task.completions[key] != nil }
+    var isOverdue: Bool { !task.isEvent && !isDone && day < Date().startOfDay }
 }
 
 // MARK: - Reflections

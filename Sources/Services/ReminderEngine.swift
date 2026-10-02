@@ -167,6 +167,14 @@ final class ReminderEngine: ObservableObject {
     func resetNudgeTimer() { lastNudge = Date() }
 
     private func reminderContent(_ occ: Occurrence, offset: Int) -> AlertContent {
+        if occ.isEvent {
+            var body = "Today"
+            if let start = occ.start {
+                body = offset == 0 ? "Starting now (\(timeString(start)))" : offset < 0 ? offsetString(offset) : "Starts at \(timeString(start)) — \(offsetString(offset))"
+            }
+            if !occ.task.notes.isEmpty { body += " · \(occ.task.notes)" }
+            return AlertContent(kind: .event, title: occ.task.title, body: body, symbol: "calendar", tint: occ.task.color.color)
+        }
         var body: String
         if let start = occ.start {
             if offset < 0, let end = occ.end {

@@ -92,6 +92,9 @@ enum DebugDriver {
             log.append("readDone=\(model.store.tasks.first { $0.title == "Read 20 pages" }?.completions.keys.sorted() ?? [])")
             log.append("reflection=\(model.store.reflections.first?.text.prefix(40) ?? "none")")
             log.append("minWords=\(model.store.settings.minReflectionWords)")
+            log.append("todayChecklist=" + model.store.todayChecklist().map(\.task.title).sorted().joined(separator: ", "))
+            log.append("todayEvents=" + model.store.events(on: Date()).map(\.task.title).sorted().joined(separator: ", "))
+            log.append("tomorrowEvents=" + model.store.events(on: Date().adding(days: 1)).map(\.task.title).sorted().joined(separator: ", "))
             let imported = model.store.tasks.filter { $0.source != nil }
             log.append("imported=" + imported.map { "\($0.title)[\($0.source ?? "")\($0.archived == true ? ",archived" : "")\($0.isSilent ? ",silent" : "")]" }.sorted().joined(separator: "; "))
             if LaunchOptions.has("-googleTest") {

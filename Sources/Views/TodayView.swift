@@ -9,11 +9,11 @@ struct TodayView: View {
 
     var body: some View {
         let today = Date().startOfDay
-        let items = store.occurrences(on: today)
+        let items = store.checklist(on: today)
         let overdue = store.overdue()
         let all = overdue + items
         let done = all.filter(\.isDone).count
-        let events = google.events(on: today)
+        let events = schedule(on: today, store: store, google: google)
 
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -71,28 +71,19 @@ struct TodayView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
-                if google.isConnected && store.settings.showGoogleEvents {
-                    VStack(alignment: .leading, spacing: 6) {
-                        SectionTitle(text: "On your Google Calendar", symbol: "calendar", count: events.count)
-                        Card {
-                            if events.isEmpty {
-                                Text("No events today.").foregroundStyle(.secondary)
-                            } else {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    ForEach(events) { ev in
-                                        HStack(spacing: 10) {
-                                            RoundedRectangle(cornerRadius: 2).fill(ev.color).frame(width: 3, height: 26)
-                                            Text(ev.isAllDay ? "All day" : "\(timeString(ev.start)) – \(timeString(ev.end))")
-                                                .font(.callout.monospacedDigit()).foregroundStyle(.secondary)
-                                                .frame(width: 150, alignment: .leading)
-                                            Text(ev.title).lineLimit(1)
-                                            Spacer()
-                                            if let link = ev.link {
-                                                Link(destination: link) { Image(systemName: "arrow.up.right.square") }
-                                                    .help("Open in Google Calendar")
-                                            }
-                                        }
-                                    }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        SectionTitle(text: "Schedule", symbol: "calendar", count: events.count)
+                        Button { model.newEvent() } label: { Label("New event", systemImage: "plus") }.controlSize(.small)
+                    }
+                    Card {
+                        if events.isEmpty {
+                            Text("No events today. Events show on your calendars but never on the checklist.").foregroundStyle(.secondary)
+                        } else {
+                            VStack(spacing: 0) {
+                                ForEach(Array(events.enumerated()), id: \.element.id) { i, ev in
+                                    if i > 0 { Divider().padding(.leading, 76) }
+                                    EventRow(ev: ev)
                                 }
                             }
                         }

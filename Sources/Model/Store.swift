@@ -248,13 +248,18 @@ final class Store: ObservableObject {
     /// One-off tasks from earlier days that were never checked off.
     func overdue(today: Date = Date()) -> [Occurrence] {
         let t = today.startOfDay
-        return tasks.filter { $0.archived != true && !$0.recurrence.isRepeating && $0.startDate.startOfDay < t && $0.completions.isEmpty }
+        return tasks.filter { $0.archived != true && !$0.isEvent && !$0.recurrence.isRepeating && $0.startDate.startOfDay < t && $0.completions.isEmpty }
             .map { Occurrence(task: $0, day: $0.startDate.startOfDay) }
             .sorted { $0.day < $1.day }
     }
 
     /// Everything that belongs on today's checklist: overdue items first, then today.
-    func todayChecklist() -> [Occurrence] { overdue() + occurrences(on: Date()) }
+    /// Checklist items (tasks) on a day.
+    func checklist(on day: Date) -> [Occurrence] { occurrences(on: day).filter { !$0.isEvent } }
+    /// Cadence events on a day (your own + imported).
+    func events(on day: Date) -> [Occurrence] { occurrences(on: day).filter(\.isEvent) }
+
+    func todayChecklist() -> [Occurrence] { overdue() + checklist(on: Date()) }
 
     var remainingToday: Int { todayChecklist().filter { !$0.isDone }.count }
 

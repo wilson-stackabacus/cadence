@@ -281,15 +281,20 @@ class Store {
     return [...this.tasks.values()].filter(t => M.occurs(t, day)).map(t => M.makeOccurrence(t, day)).sort(M.sortOccurrences);
   }
 
+  /** Checklist items (tasks) on a day. */
+  tasksOn(day) { return this.occurrencesOn(day).filter(o => !o.event); }
+  /** Cadence events on a day (your own + imported). */
+  eventsOn(day) { return this.occurrencesOn(day).filter(o => o.event); }
+
   overdue() {
     const today = M.startOfDay(new Date());
     return [...this.tasks.values()]
-      .filter(t => !t.archived && t.recurrence.frequency === 'none' && M.startOfDay(t.startDate) < today && !Object.keys(t.completions || {}).length)
+      .filter(t => !t.archived && !M.isEvent(t) && t.recurrence.frequency === 'none' && M.startOfDay(t.startDate) < today && !Object.keys(t.completions || {}).length)
       .map(t => M.makeOccurrence(t, t.startDate))
       .sort((a, b) => a.day - b.day);
   }
 
-  todayChecklist() { return [...this.overdue(), ...this.occurrencesOn(new Date())]; }
+  todayChecklist() { return [...this.overdue(), ...this.tasksOn(new Date())]; }
   remainingToday() { return this.todayChecklist().filter(o => !o.done).length; }
   reflectionFor(occ) { return [...this.reflections.values()].find(r => r.taskID === occ.task.id && r.occurrenceKey === occ.key); }
 
@@ -347,7 +352,10 @@ class Store {
   googleEventsOn(day) {
     if (!this.google.connected || !this.settings.showGoogleEvents) return [];
     const s = M.startOfDay(day), e = M.addDays(s, 1);
+    // Google events already imported into Cadence (or hidden there) show once, as the Cadence item.
+    const imported = new Set([...this.tasks.values()].filter(t => t.source === 'google' && t.googleEventID).map(t => t.googleEventID));
     return [...this.google.events.values()]
+      .filter(ev => !imported.has(ev.id.slice(ev.id.indexOf('|') + 1)))
       .map(ev => ({
         ...ev,
         startDate: ev.isAllDay ? M.parseKey(ev.start) : new Date(ev.start),

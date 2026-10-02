@@ -388,7 +388,10 @@ final class GoogleCalendar: ObservableObject {
         guard isConnected && store.settings.showGoogleEvents else { return [] }
         let start = day.startOfDay
         let end = start.adding(days: 1)
+        // Google events already imported into Cadence (or hidden there) show once, as the Cadence item.
+        let imported = Set(store.tasks.filter { $0.source == "google" }.compactMap(\.googleEventID))
         return events.values.filter { $0.start < end && $0.end > start }
+            .filter { !imported.contains($0.id.split(separator: "|", maxSplits: 1).last.map(String.init) ?? $0.id) }
             .sorted { ($0.isAllDay ? 0 : 1, $0.start, $0.title) < ($1.isAllDay ? 0 : 1, $1.start, $1.title) }
     }
 
