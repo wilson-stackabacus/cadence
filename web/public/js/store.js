@@ -88,6 +88,15 @@ class Store {
     this.emit();
   }
 
+  /** Permanently deletes the account on the server, then forgets everything locally. */
+  async deleteAccount(password) {
+    await api('/api/account/delete', { method: 'POST', body: { password } });
+    try { localStorage.removeItem(this.#cacheKey()); } catch { /* ignore */ }
+    this.user = null;
+    this.#resetData();
+    this.emit();
+  }
+
   #resetData() {
     this.tasks = new Map(); this.reflections = new Map(); this.stamps = new Map(); this.pending = new Map();
     this.settings = structuredClone(M.DEFAULT_SETTINGS); this.cursor = 0;

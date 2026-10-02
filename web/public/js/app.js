@@ -491,6 +491,10 @@ function settingsView() {
     <div><h3>Account & sync</h3><div class="card">
       <div class="srow"><div>Signed in as <b>${esc(store.user.username)}</b><div class="small muted">You stay signed in on this browser until you sign out.</div></div><button class="btn" data-act="sign-out">${ic('logout')} Sign out</button></div>
       <div class="srow"><div>Sync<div class="small muted">Changes sync a moment after you make them, and every 20 seconds.</div></div>${syncControl('big')}</div>
+      <div class="srow"><div>Your data<div class="small muted">Download everything Cadence stores for your account, as a JSON file.</div></div>
+        <a class="btn" href="/api/account/export" download>${ic('copy')} Download my data</a></div>
+      <div class="srow"><div>Delete account<div class="small muted">Permanently removes your account, tasks, reflections and connections from our servers.</div></div>
+        <button class="btn danger" data-act="delete-account">${ic('trash')} Delete account…</button></div>
       <div class="srow"><div>Mac app<div class="small muted">In Cadence for Mac › Settings › Sync, enter this server and the same username and password:</div>
         <div class="mono code" style="margin-top:4px;display:inline-block">${esc(location.origin)}</div></div><button class="btn" data-act="copy-origin">${ic('copy')} Copy</button></div>
     </div></div>
@@ -569,6 +573,8 @@ function settingsView() {
       <div class="srow"><span>Look ahead</span>${sel('availability.daysAhead', [7, 14, 21, 30, 45, 60].map(n => [n, `${n} days`]), a.daysAhead)}</div>
     </div></div>
 
+    <div class="small muted" style="order:99">Read our <a href="/privacy.html" target="_blank">Privacy Policy</a> and <a href="/terms.html" target="_blank">Terms of Service</a>.</div>
+
     <div><h3>Meeting types</h3><div class="card">
       ${s.meetingTypes.map((m, i) => `<div class="srow" style="flex-wrap:wrap">
         <input class="input" style="max-width:170px" value="${esc(m.name)}" data-meeting="${i}" data-field="name" placeholder="Name">
@@ -594,6 +600,8 @@ function authView() {
     <label class="check"><input type="checkbox" name="remember" checked>Keep me signed in</label>
     ${a.error ? `<div class="error">${esc(a.error)}</div>` : ''}
     <button class="btn primary" style="min-height:38px" ${a.busy ? 'disabled' : ''}>${create ? 'Create account' : 'Sign in'}</button>
+    <div class="small muted" style="text-align:center">${create ? 'By creating an account you agree to the' : 'See our'}
+      <a href="/terms.html" target="_blank">Terms of Service</a> and <a href="/privacy.html" target="_blank">Privacy Policy</a>.</div>
   </form></div>`;
 }
 
@@ -611,6 +619,14 @@ function renderModal() {
   else if (m.type === 'editor') html = editorDialog(m);
   else if (m.type === 'detail') html = detailDialog(m);
   else if (m.type === 'booking') html = bookingDialog(m);
+  else if (m.type === 'delete-account') html = `<form class="dialog sm" data-form="delete-account"><div class="body">
+    <div class="row" style="gap:12px"><span class="badge-icon" style="background:var(--red)">${ic('trash')}</span><h2>Delete your account?</h2></div>
+    <div>This permanently deletes <b>${esc(store.user.username)}</b> and everything in it — tasks, reflections, settings, and your Google and Calendly connections — for every device. It can’t be undone.</div>
+    <div class="small muted">Tip: <a href="/api/account/export" download>download your data</a> first. The Mac app keeps its own copy on your Mac until you delete it there.</div>
+    <label class="field"><span>Type your password to confirm</span><input class="input" name="password" type="password" autocomplete="current-password" required autofocus></label>
+    ${m.error ? `<div class="error">${esc(m.error)}</div>` : ''}
+    </div><div class="foot"><span class="grow"></span><button type="button" class="btn" data-act="close">Cancel</button>
+      <button class="btn primary" style="background:var(--red)" ${m.working ? 'disabled' : ''}>${m.working ? 'Deleting…' : 'Delete forever'}</button></div></form>`;
   else if (m.type === 'confirm') html = `<div class="dialog sm"><div class="body"><h2>${esc(m.title)}</h2><div class="muted">${esc(m.text)}</div></div>
     <div class="foot"><span class="grow"></span><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="confirm-yes">${esc(m.yes)}</button></div></div>`;
   root.innerHTML = `<div class="overlay ${ui.modalFresh ? 'opening' : ''}" data-act="overlay">${html}</div>`;
@@ -968,6 +984,7 @@ const actions = {
   'ask-notify': async () => { if ('Notification' in window) await Notification.requestPermission(); render(); },
   'test-reminder': () => reminders.deliver({ kind: 'test', title: 'Test reminder', body: 'This is how Cadence reminders will look.', tint: '#0a84ff' }, store.settings.defaultChannels),
   'google-refresh': () => store.refreshGoogle(),
+  'delete-account': () => openModal({ type: 'delete-account' }),
   'calendly-refresh': () => store.refreshCalendly(),
   'calendly-disconnect': () => confirmThen('Disconnect Calendly?', 'Meetings already on your checklist stay; new ones won’t be imported.', 'Disconnect', () => store.disconnectCalendly()),
   'import-now': () => runImport({ manual: true }),
@@ -1109,6 +1126,18 @@ document.addEventListener('submit', async e => {
     setTimeout(() => { ui.justDone.delete(o.id); }, 1200);
     toast(`Checked off ${o.task.title} · reflection saved`, { icon: 'check', tone: 'good' });
     if (form.dataset.ctx === 'checkin') { ui.modal.reflecting = null; renderModal(); render(); } else closeModal();
+  } else if (kind === 'delete-account') {
+    const m = ui.modal;
+    m.working = true; m.error = null; renderModal();
+    try {
+      await store.deleteAccount(String(new FormData(form).get('password')));
+      ui.modal = null; renderModal();
+      ui.auth = { mode: 'login', error: null, busy: false };
+      render();
+      toast('Your account and data were deleted', { icon: 'check' });
+    } catch (err) {
+      m.working = false; m.error = err.message; renderModal();
+    }
   } else if (kind === 'calendly') {
     const token = String(new FormData(form).get('token') || '').trim();
     ui.calendlyBusy = true; render();

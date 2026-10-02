@@ -209,6 +209,48 @@ async function route(req, res, url) {
     return send(res, 200, await google.createEvent(user.id, await readJson(req)));
   }
 
+  // --- Your data: export and account deletion (promised in the privacy policy) ---
+  if (p === '/api/account/export' && m === 'GET') {
+    const user = await requireUser(req);
+    const u = (await db.execute({ sql: 'SELECT username, created_at FROM users WHERE id = ?', args: [user.id] })).rows[0];
+    const rows = (await db.execute({ sql: 'SELECT kind, id, data, updated_at, deleted FROM records WHERE user_id = ? ORDER BY kind, updated_at', args: [user.id] })).rows;
+    const live = rows.filter(r => !r.deleted && r.data)
+      .map(r => ({ kind: r.kind, value: { ...JSON.parse(r.data), _updatedAt: new Date(Number(r.updated_at)).toISOString() } }));
+    const of = kind => live.filter(r => r.kind === kind).map(r => r.value);
+    const g = (await db.execute({ sql: 'SELECT email, time_zone, calendar_ids FROM google_tokens WHERE user_id = ?', args: [user.id] })).rows[0];
+    const c = await calendly.status(user.id);
+    const out = {
+      exportedAt: new Date().toISOString(),
+      account: { username: u.username, createdAt: new Date(Number(u.created_at)).toISOString() },
+      tasks: of('task'),
+      reflections: of('reflection'),
+      settings: of('settings')[0] ?? null,
+      connections: {
+        google: g ? { email: g.email, timeZone: g.time_zone, calendars: JSON.parse(g.calendar_ids || '[]') } : null,
+        calendly: c.connected ? { name: c.name, schedulingUrl: c.schedulingUrl } : null,
+      },
+    };
+    return send(res, 200, out, { 'Content-Disposition': `attachment; filename="cadence-${u.username}-${new Date().toISOString().slice(0, 10)}.json"` });
+  }
+  if (p === '/api/account/delete' && m === 'POST') {
+    const user = await requireUser(req);
+    const { password } = await readJson(req);
+    const row = await auth.findUser(user.username);
+    if (!row || !(await auth.verifyPassword(String(password || ''), row.password_hash))) throw new HttpError(401, 'Wrong password.');
+    await google.disconnect(user.id).catch(() => {});      // revokes Google access + stops push channels
+    await calendly.disconnect(user.id).catch(() => {});
+    await db.batch([
+      { sql: 'DELETE FROM google_channels WHERE user_id = ?', args: [user.id] },
+      { sql: 'DELETE FROM google_tokens WHERE user_id = ?', args: [user.id] },
+      { sql: 'DELETE FROM oauth_states WHERE user_id = ?', args: [user.id] },
+      { sql: 'DELETE FROM records WHERE user_id = ?', args: [user.id] },
+      { sql: 'DELETE FROM sessions WHERE user_id = ?', args: [user.id] },
+      { sql: 'DELETE FROM login_failures WHERE key LIKE ?', args: [`${row.username.toLowerCase()}|%`] },
+      { sql: 'DELETE FROM users WHERE id = ?', args: [user.id] },
+    ], 'write');
+    return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) });
+  }
+
   // --- Calendly ---
   if (p === '/api/calendly/status' && m === 'GET') return send(res, 200, await calendly.status((await requireUser(req)).id));
   if (p === '/api/calendly/connect' && m === 'POST') {
