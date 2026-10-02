@@ -601,7 +601,7 @@ function settingsView() {
       <div class="srow"><div>Delete account<div class="small muted">Permanently removes your account, tasks, reflections and connections from our servers.</div></div>
         <button class="btn danger" data-act="delete-account">${ic('trash')} Delete account…</button></div>
       <div class="srow"><div>Desktop apps<div class="small muted">Cadence for Mac, Windows and Linux keeps reminders running in the background.</div></div>
-        <a class="btn" href="/#download" target="_blank">${ic('copy')} Download</a></div>
+        <div class="row" style="flex-wrap:wrap;justify-content:flex-end">${downloadButtons()}</div></div>
       <div class="srow"><div>Mac app<div class="small muted">In Cadence for Mac, open Settings › Sync with Cadence Web and sign in with this same username and password. That's all — it finds this site automatically.</div></div></div>
     </div></div>
 
@@ -693,6 +693,19 @@ function settingsView() {
       <div class="srow"><button class="btn" data-act="meeting-add">${ic('plus')} Add meeting type</button></div>
     </div></div>
   </div>`;
+}
+
+// ---------- Desktop downloads (GitHub release assets, fixed names) ----------
+const RELEASE = 'https://github.com/wilson-stackabacus/cadence/releases/latest/download';
+const DOWNLOADS = [
+  ['mac', 'Mac', 'Cadence-mac.zip'], ['windows', 'Windows', 'Cadence-Setup.exe'],
+  ['linux', 'Linux (AppImage)', 'Cadence.AppImage'], ['deb', 'Linux (.deb)', 'Cadence.deb'],
+];
+function downloadButtons() {
+  const ua = navigator.userAgent;
+  const mine = /Mac/.test(ua) ? 'mac' : /Win/.test(ua) ? 'windows' : /Linux|X11/.test(ua) ? 'linux' : null;
+  const sorted = [...DOWNLOADS].sort((a, b) => (b[0] === mine) - (a[0] === mine));
+  return sorted.map(([os, label, file]) => `<a class="btn ${os === mine ? 'primary' : 'sm'}" href="${RELEASE}/${file}" download>${ic('copy')} ${os === mine ? `Download for ${label}` : label}</a>`).join('');
 }
 
 // ---------- Auth ----------

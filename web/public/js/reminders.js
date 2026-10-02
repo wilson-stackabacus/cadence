@@ -26,7 +26,15 @@ export class Reminders {
       // Coming back to the tab after a while is the browser's version of "unlocking the computer".
       if (away > 10 * 60_000 && store.settings.checkInOnUnlock) this.checkIn('Welcome back — check your list');
     });
-    if (store.settings.checkInOnLaunch) setTimeout(() => this.checkIn('Time to check in'), 800);
+    // Opening Cadence checks in, but not on every page reload: at most once every 2 hours per browser.
+    if (store.settings.checkInOnLaunch) {
+      let last = 0;
+      try { last = Number(localStorage.getItem('cadence:lastLaunchCheckIn')) || 0; } catch { /* ignore */ }
+      if (Date.now() - last > 2 * 3_600_000) {
+        try { localStorage.setItem('cadence:lastLaunchCheckIn', String(Date.now())); } catch { /* ignore */ }
+        setTimeout(() => this.checkIn('Time to check in'), 800);
+      }
+    }
     this.tick();
   }
 

@@ -42,7 +42,11 @@ class Store {
   setDevice = setDevice;
 
   subscribe(fn) { this.#listeners.add(fn); return () => this.#listeners.delete(fn); }
-  emit() { for (const fn of this.#listeners) fn(); }
+  emit() {
+    // Lets the public home page show "Open Cadence" from its first frame.
+    try { this.user ? localStorage.setItem('cadence:signedIn', '1') : localStorage.removeItem('cadence:signedIn'); } catch { /* storage blocked */ }
+    for (const fn of this.#listeners) fn();
+  }
   /** Lightweight channel for the sync indicator, so it can animate without re-rendering the page. */
   onSync(fn) { this.#syncListeners.add(fn); return () => this.#syncListeners.delete(fn); }
   #notifySync() { for (const fn of this.#syncListeners) fn(); }

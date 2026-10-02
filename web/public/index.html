@@ -14,6 +14,11 @@
   <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/css/home.css">
+  <script>
+    // Before first paint: enable reveal animations, and show signed-in buttons if the app said so.
+    document.documentElement.classList.add('js');
+    try { if (localStorage.getItem('cadence:signedIn') === '1') document.documentElement.classList.add('signed-in'); } catch {}
+  </script>
 </head>
 <body>
   <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
@@ -37,7 +42,7 @@
     <div class="links">
       <a href="#features">Features</a><a href="#how">How it works</a><a href="#download">Download</a><a href="/privacy">Privacy</a>
       <a class="btn" href="/app" data-signin>Sign in</a>
-      <a class="btn primary" href="/app?mode=register" data-start>Get started</a>
+      <a class="btn primary" href="/app?mode=register" data-start><span class="when-out">Get started</span><span class="when-in">Open Cadence</span></a>
     </div>
   </div></nav>
 
@@ -47,7 +52,7 @@
       <h1>Plan your day.<br>Check it off.<br><span class="grad">Learn from it.</span></h1>
       <p class="lede">Cadence is a daily checklist with week and month calendars, recurring tasks, and reminders that actually find you. Every time you finish something, you write a short reflection, so you get a little better each day.</p>
       <div class="ctas">
-        <a class="btn primary" href="/app?mode=register" data-start>Get started — it's free <svg class="i"><use href="#arrow"/></svg></a>
+        <a class="btn primary" href="/app?mode=register" data-start><span class="when-out">Get started — it's free</span><span class="when-in">Open Cadence</span> <svg class="i"><use href="#arrow"/></svg></a>
         <a class="btn" href="/app" data-signin>I have an account</a>
       </div>
       <div class="fine">No credit card. No ads. Your data stays yours.</div>
@@ -127,7 +132,7 @@
     <div class="cta-band reveal">
       <h2>Start your next good day</h2>
       <p>Free, private, and ready in under a minute.</p>
-      <a class="btn" href="/app?mode=register" data-start>Create your account</a>
+      <a class="btn" href="/app?mode=register" data-start><span class="when-out">Create your account</span><span class="when-in">Open Cadence</span></a>
     </div>
   </div></section>
 
@@ -143,19 +148,38 @@
     const legacy = () => { if (/^#(home|today|week|month|todo|reflections|booking|settings)\b/.test(location.hash)) location.replace('/app/' + location.hash.slice(1).split('?')[0]); };
     legacy();
     addEventListener('hashchange', legacy);
-    // Signed in already? Point the buttons at the app instead of the sign-up form.
+    // Confirm the signed-in hint quietly (it only changes anything if the hint was wrong).
+    const root = document.documentElement;
     fetch('/api/me', { credentials: 'same-origin' }).then(r => {
-      if (!r.ok) return;
-      document.querySelectorAll('[data-start]').forEach(a => { a.href = '/app'; a.firstChild.textContent = 'Open Cadence '; });
-      document.querySelectorAll('[data-signin]').forEach(a => a.remove());
+      const signedIn = r.ok;
+      root.classList.toggle('signed-in', signedIn);
+      try { signedIn ? localStorage.setItem('cadence:signedIn', '1') : localStorage.removeItem('cadence:signedIn'); } catch {}
+      if (signedIn) document.querySelectorAll('[data-start]').forEach(a => { a.href = '/app'; });
     }).catch(() => {});
+    // Smooth scrolling only for clicks on in-page links (a global smooth scroll replays on reload).
+    document.addEventListener('click', e => {
+      const a = e.target.closest('a[href^="#"]');
+      const target = a && document.querySelector(a.getAttribute('href'));
+      if (!target) return;
+      e.preventDefault();
+      target.scrollIntoView({ behavior: 'smooth' });
+      history.replaceState(null, '', a.getAttribute('href'));
+    });
     // Highlight the download for this computer.
     const ua = navigator.userAgent;
     const os = /Mac/.test(ua) ? 'mac' : /Win/.test(ua) ? 'windows' : /Linux|X11/.test(ua) && !/Android/.test(ua) ? 'linux' : null;
     if (os) document.querySelector(`.dl[data-os="${os}"]`)?.classList.add('mine');
     // Fade sections in as they scroll into view.
+    // Anything already on screen at load appears immediately (no pop-in); the rest fades in on scroll.
+    const reveals = [...document.querySelectorAll('.reveal')];
+    const vh = innerHeight;
+    for (const el of reveals) {
+      const r = el.getBoundingClientRect();
+      if (r.top < vh && r.bottom > 0) { el.classList.add('instant', 'in'); }
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => reveals.forEach(el => el.classList.remove('instant'))));
     const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { threshold: .12 });
-    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+    reveals.filter(el => !el.classList.contains('in')).forEach(el => io.observe(el));
   </script>
 </body>
 </html>

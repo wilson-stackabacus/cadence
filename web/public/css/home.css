@@ -8,7 +8,6 @@
     --green: #30d158; --shadow: 0 30px 80px rgba(0,0,0,.55), 0 6px 20px rgba(0,0,0,.3); color-scheme: dark; }
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
 a { color: inherit; }
 .i { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
@@ -106,8 +105,14 @@ footer a { color: var(--muted); text-decoration: none; }
 footer a:hover { color: var(--text); }
 footer .sp { flex: 1; }
 
-.reveal { opacity: 0; transform: translateY(16px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1); }
-.reveal.in { opacity: 1; transform: none; }
+/* Only hide reveal items when JS is running, and never the ones already on screen at load. */
+.js .reveal:not(.in) { opacity: 0; transform: translateY(16px); }
+.reveal { transition: opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1); }
+.reveal.instant { transition: none; }
+/* Signed-in visitors see the right buttons from the very first frame (hint set by the app). */
+.when-in { display: none; }
+.signed-in .when-in { display: inline; }
+.signed-in .when-out, .signed-in [data-signin] { display: none !important; }
 
 @media (max-width: 900px) {
   .hero { padding-top: 48px; }
