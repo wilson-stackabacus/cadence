@@ -8,6 +8,14 @@
       "destination": "/api/index?__path=:path*"
     },
     {
+      "source": "/privacy",
+      "destination": "/privacy.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/terms.html"
+    },
+    {
       "source": "/app",
       "destination": "/app.html"
     },
@@ -41,6 +49,21 @@
       "schedule": "0 9 * * *"
     }
   ],
-  "cleanUrls": true,
-  "trailingSlash": false
+  "redirects": [
+    {
+      "source": "/privacy.html",
+      "destination": "/privacy",
+      "permanent": true
+    },
+    {
+      "source": "/terms.html",
+      "destination": "/terms",
+      "permanent": true
+    },
+    {
+      "source": "/index.html",
+      "destination": "/",
+      "permanent": true
+    }
+  ]
 }
