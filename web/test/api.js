@@ -1,9 +1,13 @@
 // API smoke test against a running dev server (npm run dev).
 //   node test/api.js [baseUrl]
 // Also (re)creates the local dev account in test/dev-account.json with demo tasks.
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 const BASE = process.argv[2] || 'http://localhost:8132';
-const dev = JSON.parse(readFileSync(new URL('./dev-account.json', import.meta.url)));
+// Local-only dev account (git-ignored). Created with a random password the first time.
+const devFile = new URL('./dev-account.json', import.meta.url);
+if (!existsSync(devFile)) writeFileSync(devFile, JSON.stringify({ username: 'devuser', password: `dev-${randomBytes(9).toString('base64url')}` }, null, 2) + '\n');
+const dev = JSON.parse(readFileSync(devFile));
 let fail = 0;
 const check = (ok, msg) => { console.log(ok ? 'PASS' : 'FAIL', msg); if (!ok) fail++; };
 
