@@ -311,7 +311,7 @@ class Store {
     try {
       Object.assign(this.google, await api('/api/google/status'));
       if (this.google.connected) {
-        this.google.calendars = await api('/api/google/calendars').catch(() => []);
+        this.google.calendars = await api('/api/google/calendars').catch(e => { this.google.error = e.message; return []; });
         this.google.events = new Map(); this.google.months = new Set();
         this.ensureGoogle(M.addDays(new Date(), -40), M.addDays(new Date(), 75));
         this.watchGoogle();
@@ -328,6 +328,7 @@ class Store {
       this.google.loading.add(key);
       const q = new URLSearchParams({ from: M.iso(m), to: M.iso(M.addMonths(m, 1)), calendars: this.googleCalendarIDs.join(',') });
       api(`/api/google/events?${q}`).then(list => {
+        this.google.error = null;
         const end = M.addMonths(m, 1);
         for (const [id, e] of this.google.events) {
           const s = e.isAllDay ? M.parseKey(e.start) : new Date(e.start);
@@ -336,7 +337,10 @@ class Store {
         for (const e of list) this.google.events.set(e.id, e);
         this.google.months.add(key);
         this.emit();
-      }).catch(() => {}).finally(() => this.google.loading.delete(key));
+      }).catch(e => {
+        // Don't hide Google failures (e.g. the Calendar API disabled in the Cloud project): show them in Settings.
+        if (this.google.error !== e.message) { this.google.error = e.message; this.emit(); }
+      }).finally(() => this.google.loading.delete(key));
     }
   }
 
