@@ -43,8 +43,14 @@ final class GoogleCalendar: ObservableObject {
     @Published private(set) var events: [String: GoogleEvent] = [:]
     @Published private(set) var isSigningIn = false
     @Published var lastError: String?
+    /// True when this Mac uses the website's Google connection (through your Cadence account)
+    /// instead of its own Google sign-in.
+    @Published private(set) var viaServer = false
+    @Published private(set) var serverEmail: String?
+    /// Set by AppModel: an authenticated request to the Cadence API.
+    var serverCall: ((String, String, [URLQueryItem], Any?) async throws -> Any)?
 
-    var account: String? { calendars.first(where: \.primary)?.id }
+    var account: String? { serverEmail ?? calendars.first(where: \.primary)?.id }
 
     private unowned let store: Store
     private var tokens: GoogleTokens?
@@ -66,10 +72,65 @@ final class GoogleCalendar: ObservableObject {
     // MARK: Connection
 
     func restore() {
-        guard let t = Keychain.load() else { return }
+        guard let t = Keychain.load() else {
+            Task { await checkServer() }
+            return
+        }
         tokens = t
         isConnected = true
         Task { await afterConnect() }
+    }
+
+    /// Uses the website's Google connection if this Mac has none of its own.
+    func checkServer() async {
+        guard tokens == nil, let call = serverCall else { return }
+        do {
+            let st = try await call("GET", "/api/google/status", [], nil) as? [String: Any] ?? [:]
+            if st["connected"] as? Bool == true {
+                let wasConnected = viaServer
+                viaServer = true
+                isConnected = true
+                serverEmail = st["email"] as? String
+                lastError = nil
+                if !wasConnected { await afterConnect() }
+            } else if viaServer {
+                resetServerMode()
+            }
+        } catch {
+            // Not signed in to sync, or offline: leave things as they are.
+        }
+    }
+
+    /// Called when the Mac signs out of sync.
+    func resetServerMode() {
+        guard viaServer else { return }
+        viaServer = false
+        serverEmail = nil
+        isConnected = false
+        calendars = []
+        events = [:]
+        loadedMonths = []
+    }
+
+    private func server(_ method: String, _ path: String, _ query: [URLQueryItem] = [], _ body: Any? = nil) async throws -> Any {
+        guard let call = serverCall else { throw GoogleError.notConnected }
+        do { return try await call(method, path, query, body) }
+        catch { throw GoogleError.oauth(error.localizedDescription) }
+    }
+
+    /// Events from the Cadence API (same shape the web app uses).
+    static func parseServerEvent(_ d: [String: Any]) -> GoogleEvent? {
+        guard let id = d["id"] as? String, let s = d["start"] as? String, let e = d["end"] as? String else { return nil }
+        let allDay = d["isAllDay"] as? Bool ?? false
+        guard let start = allDay ? DateKey.date(s) : parseISO(s), let end = allDay ? DateKey.date(e) : parseISO(e) else { return nil }
+        return GoogleEvent(id: id, calendarID: d["calendarID"] as? String ?? "primary", title: d["title"] as? String ?? "(No title)",
+                           start: start, end: max(end, start.addingTimeInterval(60)), isAllDay: allDay,
+                           location: d["location"] as? String, link: (d["link"] as? String).flatMap(URL.init(string:)),
+                           colorHex: d["colorHex"] as? String)
+    }
+
+    private var calendarsParam: URLQueryItem {
+        URLQueryItem(name: "calendars", value: store.settings.googleCalendarIDs.joined(separator: ","))
     }
 
     func connect() async {
@@ -134,6 +195,12 @@ final class GoogleCalendar: ObservableObject {
     func cancelSignIn() { server?.stop() }
 
     func disconnect() {
+        if viaServer {
+            // Disconnects Google for the whole account (web and every device).
+            Task { _ = try? await server("POST", "/api/google/disconnect", [], [String: Any]()) }
+            resetServerMode()
+            return
+        }
         if let t = tokens {
             // Best-effort revoke so the grant disappears from the Google account too.
             var req = URLRequest(url: URL(string: "https://oauth2.googleapis.com/revoke")!)
@@ -158,6 +225,20 @@ final class GoogleCalendar: ObservableObject {
     // MARK: Calendars & events
 
     func loadCalendars() async {
+        if viaServer {
+            do {
+                let list = try await server("GET", "/api/google/calendars") as? [[String: Any]] ?? []
+                calendars = list.compactMap { d in
+                    guard let id = d["id"] as? String else { return nil }
+                    return GCalendar(id: id, summary: d["summary"] as? String ?? id, primary: d["primary"] as? Bool ?? false,
+                                     colorHex: d["colorHex"] as? String, canWrite: d["canWrite"] as? Bool ?? false)
+                }
+                .sorted { ($0.primary ? 0 : 1, $0.summary) < ($1.primary ? 0 : 1, $1.summary) }
+            } catch {
+                lastError = error.localizedDescription
+            }
+            return
+        }
         do {
             let json = try await api("GET", "/users/me/calendarList")
             let items = json["items"] as? [[String: Any]] ?? []
@@ -204,6 +285,13 @@ final class GoogleCalendar: ObservableObject {
         let colorFor = Dictionary(calendars.map { ($0.id, $0.colorHex) }, uniquingKeysWith: { a, _ in a })
         var fresh: [String: GoogleEvent] = [:]
         do {
+            if viaServer {
+                let list = try await server("GET", "/api/google/events", [
+                    URLQueryItem(name: "from", value: Self.iso.string(from: month)),
+                    URLQueryItem(name: "to", value: Self.iso.string(from: end)), calendarsParam,
+                ]) as? [[String: Any]] ?? []
+                for d in list { if let ev = Self.parseServerEvent(d) { fresh[ev.id] = ev } }
+            } else {
             for calID in selectedCalendarIDs {
                 var pageToken: String?
                 repeat {
@@ -222,6 +310,7 @@ final class GoogleCalendar: ObservableObject {
                     }
                     pageToken = json["nextPageToken"] as? String
                 } while pageToken != nil
+            }
             }
             // Swap this month's events in one go: picks up edits and deletions without flicker.
             var merged = events.filter { !($0.value.start >= month && $0.value.start < end) }
@@ -246,6 +335,14 @@ final class GoogleCalendar: ObservableObject {
     /// Fetches events in a range straight from Google (used by the importer), plus the raw IDs of
     /// events deleted/cancelled there (Google returns them as tombstones with showDeleted=true).
     func fetchEvents(from: Date, to: Date) async throws -> (events: [GoogleEvent], cancelled: [String]) {
+        if viaServer {
+            let r = try await server("GET", "/api/google/import-window", [
+                URLQueryItem(name: "from", value: Self.iso.string(from: from)),
+                URLQueryItem(name: "to", value: Self.iso.string(from: to)), calendarsParam,
+            ]) as? [String: Any] ?? [:]
+            let evs = (r["events"] as? [[String: Any]] ?? []).compactMap(Self.parseServerEvent)
+            return (evs, r["cancelled"] as? [String] ?? [])
+        }
         let colorFor = Dictionary(calendars.map { ($0.id, $0.colorHex) }, uniquingKeysWith: { a, _ in a })
         var out: [GoogleEvent] = []
         var cancelled: [String] = []
@@ -274,6 +371,11 @@ final class GoogleCalendar: ObservableObject {
 
     /// One event by ID; nil if it was deleted or cancelled.
     func fetchEvent(calendarID: String, eventID: String) async throws -> GoogleEvent? {
+        if viaServer {
+            let r = try await server("GET", "/api/google/event", [URLQueryItem(name: "calendar", value: calendarID),
+                                                                   URLQueryItem(name: "id", value: eventID)]) as? [String: Any] ?? [:]
+            return (r["event"] as? [String: Any]).flatMap(Self.parseServerEvent)
+        }
         do {
             let json = try await api("GET", "/calendars/\(Self.encode(calendarID))/events/\(Self.encode(eventID))")
             return Self.parseEvent(json, calendarID: calendarID, colorHex: nil)
@@ -292,6 +394,15 @@ final class GoogleCalendar: ObservableObject {
 
     /// Busy intervals across the selected calendars (Google free/busy API).
     func busyIntervals(from: Date, to: Date) async throws -> [DateInterval] {
+        if viaServer {
+            let list = try await server("POST", "/api/google/freebusy", [], [
+                "from": Self.iso.string(from: from), "to": Self.iso.string(from: to), "calendars": store.settings.googleCalendarIDs,
+            ]) as? [[String: Any]] ?? []
+            return list.compactMap { b in
+                guard let s = (b["start"] as? String).flatMap(Self.parseISO), let e = (b["end"] as? String).flatMap(Self.parseISO), e > s else { return nil }
+                return DateInterval(start: s, end: e)
+            }
+        }
         let body: [String: Any] = [
             "timeMin": Self.iso.string(from: from),
             "timeMax": Self.iso.string(from: to),
@@ -313,6 +424,22 @@ final class GoogleCalendar: ObservableObject {
     @discardableResult
     func create(_ e: NewGoogleEvent) async throws -> GoogleEvent? {
         let tz = TimeZone.current.identifier
+        if viaServer {
+            var body: [String: Any] = [
+                "title": e.title, "details": e.details, "allDay": e.allDay,
+                "start": Self.iso.string(from: e.start), "end": Self.iso.string(from: e.end),
+                "startDate": DateKey.string(e.start), "endDate": DateKey.string(e.start.adding(days: 1)),
+                "attendees": e.attendees.map { ["email": $0.email, "name": $0.name] },
+                "addMeetLink": e.addMeetLink, "timeZone": tz, "calendarID": e.calendarID,
+            ]
+            if let r = e.rrule { body["rrule"] = r }
+            let r = try await server("POST", "/api/google/events", [], body) as? [String: Any] ?? [:]
+            loadedMonths.remove(DateKey.string(e.start.startOfMonth))
+            ensure(from: e.start, to: e.start.adding(days: 1))
+            guard let id = r["id"] as? String else { return nil }
+            return GoogleEvent(id: "\(e.calendarID)|\(id)", calendarID: e.calendarID, title: e.title, start: e.start, end: e.end,
+                               isAllDay: e.allDay, location: nil, link: (r["link"] as? String).flatMap(URL.init(string:)), colorHex: nil)
+        }
         var body: [String: Any] = ["summary": e.title, "description": e.details]
         if e.allDay {
             body["start"] = ["date": DateKey.string(e.start)]

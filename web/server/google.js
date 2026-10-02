@@ -4,6 +4,9 @@
 import { randomBytes } from 'node:crypto';
 import { db } from './db.js';
 
+// Overridable only for local tests (test/google-mock.js); production always talks to Google.
+const CALENDAR_API = (!process.env.VERCEL && process.env.GOOGLE_API_BASE) || 'https://www.googleapis.com/calendar/v3';
+
 const SCOPES = [
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/calendar.events',
@@ -112,7 +115,7 @@ async function accessToken(userId) {
 
 async function api(userId, method, path, { query, body } = {}) {
   const token = await accessToken(userId);
-  const url = new URL(`https://www.googleapis.com/calendar/v3${path}`);
+  const url = new URL(`${CALENDAR_API}${path}`);
   for (const [k, v] of Object.entries(query ?? {})) url.searchParams.set(k, v);
   const r = await fetch(url, {
     method,

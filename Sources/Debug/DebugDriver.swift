@@ -94,6 +94,16 @@ enum DebugDriver {
             log.append("minWords=\(model.store.settings.minReflectionWords)")
             let imported = model.store.tasks.filter { $0.source != nil }
             log.append("imported=" + imported.map { "\($0.title)[\($0.source ?? "")\($0.archived == true ? ",archived" : "")\($0.isSilent ? ",silent" : "")]" }.sorted().joined(separator: "; "))
+            if LaunchOptions.has("-googleTest") {
+                await model.google.checkServer()
+                for _ in 0..<20 { if !model.google.events.isEmpty { break }; try? await Task.sleep(nanoseconds: 250_000_000) }
+                log.append("google viaServer=\(model.google.viaServer) connected=\(model.google.isConnected) account=\(model.google.account ?? "-") calendars=\(model.google.calendars.map(\.summary)) eventsLoaded=\(model.google.events.values.map(\.title).sorted())")
+                await model.importer.importNow()
+                log.append("import: \(model.importer.lastSummary ?? "-")")
+                log.append("googleTasks=" + model.store.tasks.filter { $0.source == "google" }.map { "\($0.title)[\($0.isSilent ? "silent" : "loud")\($0.archived == true ? ",archived" : "")]" }.sorted().joined(separator: "; "))
+                let busy = (try? await model.google.busyIntervals(from: Date().startOfDay, to: Date().startOfDay.adding(days: 1)))?.count ?? -1
+                log.append("freebusy intervals=\(busy)")
+            }
             model.store.upsert(PlanTask(title: "Created on the Mac", startDate: Date().startOfDay, timeMinutes: 20 * 60))
             sync.sync()
             try? await Task.sleep(nanoseconds: 500_000_000)

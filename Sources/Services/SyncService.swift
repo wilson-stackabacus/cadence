@@ -60,6 +60,32 @@ final class SyncService: ObservableObject {
 
     var isSignedIn: Bool { username != nil }
 
+    /// Called after signing in / out, so other services (Google via the website) can react.
+    var onSignedIn: (() -> Void)?
+    var onSignedOut: (() -> Void)?
+
+    /// An authenticated call to the Cadence API (used for the website's Google connection).
+    func apiCall(_ method: String, _ path: String, query: [URLQueryItem] = [], body: Any? = nil) async throws -> Any {
+        guard let base = baseURL, let token = Keychain.string(account: Keys.token) else { throw SyncError.unauthorized }
+        var c = URLComponents(url: base.appendingPathComponent(String(path.drop(while: { $0 == "/" }))), resolvingAgainstBaseURL: false)!
+        if !query.isEmpty { c.queryItems = query }
+        var req = URLRequest(url: c.url!, timeoutInterval: 30)
+        req.httpMethod = method
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let body {
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        let json = (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) ?? [:]
+        if code == 401 { throw SyncError.unauthorized }
+        guard (200..<300).contains(code) else {
+            throw SyncError.server(((json as? [String: Any])?["error"] as? String) ?? "Server returned \(code).")
+        }
+        return json
+    }
+
     init(store: Store) {
         self.store = store
         // The real app always syncs with the Cadence site; only test runs (launched with -dataDir) may
@@ -133,6 +159,7 @@ final class SyncService: ObservableObject {
             self.username = user
             status = .idle
             sync()
+            onSignedIn?()
         } catch {
             status = .error(error.localizedDescription)
         }
@@ -153,6 +180,7 @@ final class SyncService: ObservableObject {
         lastPushed = nil
         username = nil
         status = .signedOut
+        onSignedOut?()
     }
 
     // MARK: Sync

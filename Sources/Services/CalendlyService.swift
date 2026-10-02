@@ -173,6 +173,14 @@ final class CalendarImporter: ObservableObject {
     }
 
     func autoImport() {
+        if !model.google.isConnected && model.sync.isSignedIn {
+            Task { await model.google.checkServer(); self.autoImportNow() }
+            return
+        }
+        autoImportNow()
+    }
+
+    private func autoImportNow() {
         guard model.store.settings.autoImportCalendars, !isImporting,
               model.google.isConnected || model.calendly.isConnected else { return }
         Task { await importNow(includeCalendly: Date().timeIntervalSince(lastCalendly) > 30 * 60) }

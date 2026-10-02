@@ -52,6 +52,12 @@ final class AppModel: ObservableObject {
         store = Store(directory: LaunchOptions.dataDirectory)
         google = GoogleCalendar(store: store)
         sync = SyncService(store: store)
+        // Google through the website: the Mac reuses the account's Google connection.
+        google.serverCall = { [unowned sync] method, path, query, body in
+            try await sync.apiCall(method, path, query: query, body: body)
+        }
+        sync.onSignedIn = { [unowned google] in Task { await google.checkServer() } }
+        sync.onSignedOut = { [unowned google] in google.resetServerMode() }
     }
 
     func start() {

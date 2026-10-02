@@ -195,6 +195,10 @@ struct SettingsView: View {
                     Button("Refresh") { Task { await google.loadCalendars(); google.reloadEvents() } }
                     Button("Disconnect", role: .destructive) { google.disconnect() }
                 }
+                if google.viaServer {
+                    Text("Using the Google connection from your Cadence account, so it's the same on the web and every device. Disconnecting here disconnects it everywhere.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Toggle("Show Google events in Cadence calendars", isOn: $store.settings.showGoogleEvents)
                 Picker("Remind me before Google events", selection: $store.settings.googleEventReminderMinutes) {
                     Text("Off").tag(0)
@@ -215,6 +219,22 @@ struct SettingsView: View {
                     }
                 }
             } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(sync.isSignedIn
+                         ? "Connect Google Calendar once on the website. This Mac uses that connection automatically."
+                         : "Sign in to sync (above), then connect Google Calendar on the website. This Mac uses that connection automatically.")
+                    HStack {
+                        Link(destination: URL(string: "https://cadenceplanner.vercel.app/app/settings")!) {
+                            Label("Connect on the website", systemImage: "arrow.up.right.square")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!sync.isSignedIn)
+                        Button("Check again") { Task { await google.checkServer() } }
+                            .disabled(!sync.isSignedIn)
+                    }
+                }
+                .font(.callout)
+                DisclosureGroup("Advanced: use this Mac's own Google client") {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("One-time setup (about 5 minutes):").font(.callout.weight(.medium))
                     Text("1. Open Google Cloud Console, create a project, and enable the **Google Calendar API**.")
@@ -241,9 +261,9 @@ struct SettingsView: View {
                         Button("Cancel") { google.cancelSignIn() }
                     } else {
                         Button("Connect Google Calendar") { Task { await google.connect() } }
-                            .buttonStyle(.borderedProminent)
                             .disabled(store.settings.googleClientID.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
+                }
                 }
             }
             if let err = google.lastError {
