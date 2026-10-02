@@ -570,8 +570,7 @@ function settingsView() {
         <a class="btn" href="/api/account/export" download>${ic('copy')} Download my data</a></div>
       <div class="srow"><div>Delete account<div class="small muted">Permanently removes your account, tasks, reflections and connections from our servers.</div></div>
         <button class="btn danger" data-act="delete-account">${ic('trash')} Delete account…</button></div>
-      <div class="srow"><div>Mac app<div class="small muted">In Cadence for Mac › Settings › Sync, enter this server and the same username and password:</div>
-        <div class="mono code" style="margin-top:4px;display:inline-block">${esc(location.origin)}</div></div><button class="btn" data-act="copy-origin">${ic('copy')} Copy</button></div>
+      <div class="srow"><div>Mac app<div class="small muted">In Cadence for Mac, open Settings › Sync with Cadence Web and sign in with this same username and password. That's all — it finds this site automatically.</div></div></div>
     </div></div>
 
     <div><h3>Reminders on this device</h3><div class="card">

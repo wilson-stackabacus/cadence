@@ -48,9 +48,7 @@ struct SettingsView: View {
                     SyncIndicator(prominent: true)
                     Button("Sign out", role: .destructive) { sync.signOut() }
                 }
-                Text(sync.serverURL).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
             } else {
-                TextField("Cadence Web address", text: $sync.serverURL, prompt: Text("https://your-cadence.vercel.app"))
                 TextField("Username", text: $sync.draftUsername)
                 SecureField("Password", text: $syncPassword)
                 HStack {
@@ -65,9 +63,9 @@ struct SettingsView: View {
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                 }
-                .disabled(sync.serverURL.isEmpty || sync.draftUsername.isEmpty || syncPassword.isEmpty || sync.isSigningIn)
+                .disabled(sync.draftUsername.isEmpty || syncPassword.isEmpty || sync.isSigningIn)
                 if case .error(let m) = sync.status { Text(m).font(.caption).foregroundStyle(.red) }
-                Text("Use the same username and password as Cadence on the web. You stay signed in on this Mac until you sign out.")
+                Text("Use the same username and password as on cadenceplanner.vercel.app (or create an account here). You stay signed in on this Mac until you sign out.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         } header: {

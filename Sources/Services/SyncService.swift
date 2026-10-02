@@ -17,8 +17,9 @@ final class SyncService: ObservableObject {
     private static let defaults: UserDefaults = LaunchOptions.has("-dataDir")
         ? (UserDefaults(suiteName: "com.ryanpark.cadence.debug") ?? .standard) : .standard
 
+    /// Always the Cadence site in the real app (there's no address to type); test runs may override it.
     @Published var serverURL: String {
-        didSet { Self.defaults.set(serverURL, forKey: Keys.server) }
+        didSet { if LaunchOptions.has("-dataDir") { Self.defaults.set(serverURL, forKey: Keys.server) } }
     }
     /// What you typed in the username box, kept even if you leave Settings before signing in.
     @Published var draftUsername: String {
@@ -60,14 +61,15 @@ final class SyncService: ObservableObject {
 
     init(store: Store) {
         self.store = store
-        var saved = Self.defaults.string(forKey: Keys.server) ?? ""
-        // A local test address (left behind by an earlier test run) is never what you want in the real app.
-        if !LaunchOptions.has("-dataDir"), saved.contains("127.0.0.1") || saved.contains("localhost") { saved = "" }
-        // The site moved to a cleaner address; the old one still redirects, but use the new one directly.
-        if saved.contains("cadence-gray-zeta.vercel.app") { saved = Self.defaultServer }
-        let resolved = saved.isEmpty ? Self.defaultServer : saved
-        Self.defaults.set(resolved, forKey: Keys.server)
-        serverURL = resolved
+        // The real app always syncs with the Cadence site; only test runs (launched with -dataDir) may
+        // point somewhere else. Any address saved by older versions (e.g. ".../app", which made the
+        // server answer 405) is ignored and cleared.
+        if LaunchOptions.has("-dataDir") {
+            serverURL = Self.defaults.string(forKey: Keys.server) ?? Self.defaultServer
+        } else {
+            Self.defaults.removeObject(forKey: Keys.server)
+            serverURL = Self.defaultServer
+        }
         draftUsername = Self.defaults.string(forKey: Keys.draftUsername) ?? ""
         if Keychain.string(account: Keys.token) != nil, let u = Self.defaults.string(forKey: Keys.username) {
             username = u
@@ -93,15 +95,18 @@ final class SyncService: ObservableObject {
 
     // MARK: Account
 
+    /// Scheme + host (+ port) only, so a stray path such as "/app" can never end up in API requests.
     private var baseURL: URL? {
         var s = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        while s.hasSuffix("/") { s.removeLast() }
         if !s.isEmpty && !s.contains("://") { s = "https://" + s }
-        return URL(string: s)
+        guard let parsed = URLComponents(string: s), let scheme = parsed.scheme, let host = parsed.host else { return nil }
+        var c = URLComponents()
+        c.scheme = scheme; c.host = host; c.port = parsed.port
+        return c.url
     }
 
     func signIn(username: String, password: String, create: Bool) async {
-        guard let base = baseURL else { status = .error("Enter the Cadence Web address first."); return }
+        guard let base = baseURL else { status = .error("Couldn't reach Cadence. Try again."); return }
         isSigningIn = true
         defer { isSigningIn = false }
         do {
