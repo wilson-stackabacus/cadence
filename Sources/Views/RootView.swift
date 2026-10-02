@@ -10,36 +10,39 @@ struct RootView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: selection) {
-                Section("Plan") {
-                    row(.today).badge(store.remainingToday)
-                    row(.week)
-                    row(.month)
-                    row(.todo)
-                }
-                Section("Grow") {
-                    row(.reflections).badge(store.reflections.count)
-                }
-                Section("Connect") {
-                    row(.booking)
-                }
-                Section {
-                    row(.settings)
-                }
-            }
-            .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
-            .safeAreaInset(edge: .top) {
+            // Header and footer sit outside the List (no safeAreaInset): insets on a macOS sidebar
+            // List can shift where clicks land, which made the first row under each header miss.
+            VStack(spacing: 0) {
                 HStack(spacing: 8) {
                     Image(nsImage: NSApp.applicationIconImage)
                         .resizable()
-                        .frame(width: 30, height: 30)
+                        .frame(width: 28, height: 28)
                     Text("Cadence").font(.title3.weight(.bold))
                     Spacer()
                 }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 4)
-            }
-            .safeAreaInset(edge: .bottom) {
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
+                .padding(.bottom, 2)
+
+                List(selection: selection) {
+                    Section("Plan") {
+                        row(.today, badge: store.remainingToday)
+                        row(.week)
+                        row(.month)
+                        row(.todo)
+                    }
+                    Section("Grow") {
+                        row(.reflections, badge: store.reflections.count)
+                    }
+                    Section("Connect") {
+                        row(.booking)
+                    }
+                    Section {
+                        row(.settings)
+                    }
+                }
+                .listStyle(.sidebar)
+
                 VStack(alignment: .leading, spacing: 6) {
                     Button { model.newTask() } label: {
                         Label("New Task", systemImage: "plus").frame(maxWidth: .infinity)
@@ -51,6 +54,7 @@ struct RootView: View {
                 }
                 .padding(12)
             }
+            .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
         } detail: {
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -69,8 +73,14 @@ struct RootView: View {
         }
     }
 
-    private func row(_ s: Screen) -> some View {
-        Label(s.title, systemImage: s.symbol).tag(s)
+    private func row(_ s: Screen, badge: Int = 0) -> some View {
+        Label(s.title, systemImage: s.symbol)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            // Belt and braces: a click anywhere on the row switches screens even if List selection misses it.
+            .simultaneousGesture(TapGesture().onEnded { model.screen = s })
+            .badge(badge)
+            .tag(s)
     }
 
     @ViewBuilder private var detail: some View {

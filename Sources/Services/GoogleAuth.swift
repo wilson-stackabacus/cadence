@@ -29,73 +29,101 @@ enum GoogleError: LocalizedError {
     }
 }
 
-// MARK: - Keychain
+// MARK: - Token storage
 
+/// Sign-in tokens (Google, Cadence sync, Calendly) live in a private JSON file in Cadence's data folder,
+/// readable only by your macOS user (mode 0600). The Keychain ties items to the app's code signature,
+/// and every rebuild of this unsigned app has a new one, so Keychain logins kept silently disappearing.
+/// Items found in the Keychain from older builds are moved over on first read.
 enum Keychain {
-    private static let service = "com.ryanpark.cadence.google"
-    private static let account = "oauth-tokens"
+    private static let googleService = "com.ryanpark.cadence.google"
+    private static let googleAccount = "oauth-tokens"
+    private static let stringService = "com.ryanpark.cadence.sync"
+    private static let lock = NSLock()
+
+    private static var fileURL: URL { LaunchOptions.dataDirectory.appendingPathComponent("secrets.json") }
+
+    private static func readAll() -> [String: String] {
+        guard let data = try? Data(contentsOf: fileURL),
+              let dict = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return dict
+    }
+
+    private static func writeAll(_ dict: [String: String]) {
+        try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard let data = try? JSONEncoder().encode(dict) else { return }
+        FileManager.default.createFile(atPath: fileURL.path, contents: nil, attributes: [.posixPermissions: 0o600])
+        try? data.write(to: fileURL, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+    }
+
+    private static func get(_ key: String, legacyService: String, legacyAccount: String) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        var all = readAll()
+        if let v = all[key] { return v }
+        // One-time migration from the Keychain (older builds).
+        guard let legacy = legacyKeychainRead(service: legacyService, account: legacyAccount) else { return nil }
+        all[key] = legacy
+        writeAll(all)
+        legacyKeychainDelete(service: legacyService, account: legacyAccount)
+        return legacy
+    }
+
+    private static func set(_ key: String, _ value: String?, legacyService: String, legacyAccount: String) {
+        lock.lock(); defer { lock.unlock() }
+        var all = readAll()
+        all[key] = value
+        writeAll(all)
+        if value == nil { legacyKeychainDelete(service: legacyService, account: legacyAccount) }
+    }
+
+    // MARK: Google OAuth tokens
 
     static func save(_ tokens: GoogleTokens) {
-        guard let data = try? JSONEncoder().encode(tokens) else { return }
-        delete()
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: data,
-        ]
-        SecItemAdd(query as CFDictionary, nil)
+        guard let data = try? JSONEncoder().encode(tokens), let s = String(data: data, encoding: .utf8) else { return }
+        set("google", s, legacyService: googleService, legacyAccount: googleAccount)
     }
 
     static func load() -> GoogleTokens? {
+        guard let s = get("google", legacyService: googleService, legacyAccount: googleAccount) else { return nil }
+        return try? JSONDecoder().decode(GoogleTokens.self, from: Data(s.utf8))
+    }
+
+    static func delete() { set("google", nil, legacyService: googleService, legacyAccount: googleAccount) }
+
+    // MARK: Plain strings (sync session token, Calendly token)
+
+    static func setString(_ value: String?, account: String) {
+        set(account, value, legacyService: stringService, legacyAccount: account)
+    }
+
+    static func string(account: String) -> String? {
+        get(account, legacyService: stringService, legacyAccount: account)
+    }
+
+    // MARK: Legacy Keychain access (migration only)
+
+    private static func legacyKeychainRead(service: String, account: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIFail,   // never pop a password prompt
         ]
         var out: AnyObject?
         guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess, let data = out as? Data else { return nil }
-        return try? JSONDecoder().decode(GoogleTokens.self, from: data)
+        return String(data: data, encoding: .utf8)
     }
 
-    static func delete() {
+    private static func legacyKeychainDelete(service: String, account: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
         SecItemDelete(query as CFDictionary)
-    }
-    // MARK: Plain strings (the sync login token)
-
-    private static let stringService = "com.ryanpark.cadence.sync"
-
-    static func setString(_ value: String?, account: String) {
-        let base: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: stringService,
-            kSecAttrAccount as String: account,
-        ]
-        SecItemDelete(base as CFDictionary)
-        guard let value else { return }
-        var add = base
-        add[kSecValueData as String] = Data(value.utf8)
-        SecItemAdd(add as CFDictionary, nil)
-    }
-
-    static func string(account: String) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: stringService,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var out: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess, let data = out as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
     }
 }
 

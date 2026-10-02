@@ -58,6 +58,8 @@ enum DebugDriver {
             }
         }
         runSyncTest(model)
+        runClickScan(model)
+        reportSync(model)
         let delay = Double(LaunchOptions.value("-listAfter") ?? "") ?? 3.5
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { writeWindowList(model) }
     }
@@ -97,9 +99,56 @@ enum DebugDriver {
             try? await Task.sleep(nanoseconds: 500_000_000)
             await waitIdle()
             log.append("afterPush status=\(sync.status)")
-            sync.signOut()
-            log.append("signedOut")
+            if !LaunchOptions.has("-keepSignedIn") {
+                sync.signOut()
+                log.append("signedOut")
+            }
             try? log.joined(separator: "\n").write(to: out, atomically: true, encoding: .utf8)
+        }
+    }
+
+    /// -clickScan: clicks down the sidebar (x = 90 pt) every 6 pt and records which screen each click selects.
+    static func runClickScan(_ model: AppModel) {
+        guard LaunchOptions.has("-clickScan") else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            guard let w = model.windows.mainWindow, let content = w.contentView else { return }
+            let height = content.bounds.height
+            var lines = ["window \(Int(w.frame.width))x\(Int(height))"]
+            var y: CGFloat = 20
+            @MainActor func step() {
+                guard y < height - 20 else {
+                    let url = LaunchOptions.dataDirectory.appendingPathComponent("clickscan.txt")
+                    try? lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+                    return
+                }
+                model.screen = .booking   // known baseline that is not near the top rows
+                let before = model.screen
+                let pt = NSPoint(x: 90, y: height - y)   // window coords are bottom-up
+                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                    if let e = NSEvent.mouseEvent(with: type, location: pt, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                  windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                        w.sendEvent(e)
+                    }
+                }
+                let yy = y
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { MainActor.assumeIsolated {
+                    let after = model.screen
+                    lines.append("y=\(Int(yy)) -> \(after == before ? "(no change)" : after.rawValue)")
+                    y += 6
+                    step()
+                } }
+            }
+            step()
+        }
+    }
+
+    /// -reportSync: after launch, write whether this copy still considers itself signed in.
+    static func reportSync(_ model: AppModel) {
+        guard LaunchOptions.has("-reportSync") else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            let s = model.sync
+            let line = "relaunch signedIn=\(s.isSignedIn) user=\(s.username ?? "-") server=\(s.serverURL) status=\(s.status) lastSynced=\(s.lastSynced != nil) tasks=\(model.store.tasks.count)"
+            try? line.write(to: LaunchOptions.dataDirectory.appendingPathComponent("relaunch.txt"), atomically: true, encoding: .utf8)
         }
     }
 

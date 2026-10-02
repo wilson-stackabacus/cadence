@@ -10,8 +10,19 @@ final class SyncService: ObservableObject {
         case error(String)
     }
 
+    /// The live Cadence Web. Used unless you enter a different server.
+    static let defaultServer = "https://cadence-gray-zeta.vercel.app"
+
+    /// Debug/test runs (launched with -dataDir) get their own settings so they never touch yours.
+    private static let defaults: UserDefaults = LaunchOptions.has("-dataDir")
+        ? (UserDefaults(suiteName: "com.ryanpark.cadence.debug") ?? .standard) : .standard
+
     @Published var serverURL: String {
-        didSet { UserDefaults.standard.set(serverURL, forKey: Keys.server) }
+        didSet { Self.defaults.set(serverURL, forKey: Keys.server) }
+    }
+    /// What you typed in the username box, kept even if you leave Settings before signing in.
+    @Published var draftUsername: String {
+        didSet { Self.defaults.set(draftUsername, forKey: Keys.draftUsername) }
     }
     @Published private(set) var username: String?
     @Published private(set) var status: Status = .signedOut
@@ -33,23 +44,29 @@ final class SyncService: ObservableObject {
         static let cursor = "sync.cursor"
         static let lastPushed = "sync.lastPushed"
         static let token = "session-token"
+        static let draftUsername = "sync.draftUsername"
     }
 
     private var cursor: Int {
-        get { UserDefaults.standard.integer(forKey: Keys.cursor) }
-        set { UserDefaults.standard.set(newValue, forKey: Keys.cursor) }
+        get { Self.defaults.integer(forKey: Keys.cursor) }
+        set { Self.defaults.set(newValue, forKey: Keys.cursor) }
     }
     private var lastPushed: Date? {
-        get { UserDefaults.standard.object(forKey: Keys.lastPushed) as? Date }
-        set { UserDefaults.standard.set(newValue, forKey: Keys.lastPushed) }
+        get { Self.defaults.object(forKey: Keys.lastPushed) as? Date }
+        set { Self.defaults.set(newValue, forKey: Keys.lastPushed) }
     }
 
     var isSignedIn: Bool { username != nil }
 
     init(store: Store) {
         self.store = store
-        serverURL = UserDefaults.standard.string(forKey: Keys.server) ?? ""
-        if Keychain.string(account: Keys.token) != nil, let u = UserDefaults.standard.string(forKey: Keys.username) {
+        var saved = Self.defaults.string(forKey: Keys.server) ?? ""
+        // A local test address (left behind by an earlier test run) is never what you want in the real app.
+        if !LaunchOptions.has("-dataDir"), saved.contains("127.0.0.1") || saved.contains("localhost") { saved = "" }
+        serverURL = saved.isEmpty ? Self.defaultServer : saved
+        Self.defaults.set(serverURL, forKey: Keys.server)
+        draftUsername = Self.defaults.string(forKey: Keys.draftUsername) ?? ""
+        if Keychain.string(account: Keys.token) != nil, let u = Self.defaults.string(forKey: Keys.username) {
             username = u
             status = .idle
         }
@@ -94,12 +111,13 @@ final class SyncService: ObservableObject {
             guard let token = json["token"] as? String,
                   let user = (json["user"] as? [String: Any])?["username"] as? String else { throw SyncError.badResponse }
             // A different account starts from scratch: push everything here, pull everything there.
-            if user.lowercased() != UserDefaults.standard.string(forKey: Keys.username)?.lowercased() {
+            if user.lowercased() != Self.defaults.string(forKey: Keys.username)?.lowercased() {
                 cursor = 0
                 lastPushed = nil
             }
             Keychain.setString(token, account: Keys.token)
-            UserDefaults.standard.set(user, forKey: Keys.username)
+            Self.defaults.set(user, forKey: Keys.username)
+            draftUsername = user
             self.username = user
             status = .idle
             sync()
@@ -118,7 +136,7 @@ final class SyncService: ObservableObject {
             URLSession.shared.dataTask(with: req).resume()
         }
         Keychain.setString(nil, account: Keys.token)
-        UserDefaults.standard.removeObject(forKey: Keys.username)
+        Self.defaults.removeObject(forKey: Keys.username)
         cursor = 0
         lastPushed = nil
         username = nil

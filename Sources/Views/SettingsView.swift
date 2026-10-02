@@ -11,7 +11,6 @@ struct SettingsView: View {
     @EnvironmentObject private var calendly: CalendlyService
     @EnvironmentObject private var importer: CalendarImporter
     @State private var calendlyToken = ""
-    @State private var syncUser = ""
     @State private var syncPassword = ""
 
     @State private var authStatus: UNAuthorizationStatus = .notDetermined
@@ -52,21 +51,21 @@ struct SettingsView: View {
                 Text(sync.serverURL).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
             } else {
                 TextField("Cadence Web address", text: $sync.serverURL, prompt: Text("https://your-cadence.vercel.app"))
-                TextField("Username", text: $syncUser)
+                TextField("Username", text: $sync.draftUsername)
                 SecureField("Password", text: $syncPassword)
                 HStack {
                     if sync.isSigningIn { ProgressView().controlSize(.small) }
                     Spacer()
                     Button("Create account") {
-                        Task { await sync.signIn(username: syncUser, password: syncPassword, create: true); if sync.isSignedIn { syncPassword = "" } }
+                        Task { await sync.signIn(username: sync.draftUsername, password: syncPassword, create: true); if sync.isSignedIn { syncPassword = "" } }
                     }
                     Button("Sign in") {
-                        Task { await sync.signIn(username: syncUser, password: syncPassword, create: false); if sync.isSignedIn { syncPassword = "" } }
+                        Task { await sync.signIn(username: sync.draftUsername, password: syncPassword, create: false); if sync.isSignedIn { syncPassword = "" } }
                     }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                 }
-                .disabled(sync.serverURL.isEmpty || syncUser.isEmpty || syncPassword.isEmpty || sync.isSigningIn)
+                .disabled(sync.serverURL.isEmpty || sync.draftUsername.isEmpty || syncPassword.isEmpty || sync.isSigningIn)
                 if case .error(let m) = sync.status { Text(m).font(.caption).foregroundStyle(.red) }
                 Text("Use the same username and password as Cadence on the web. You stay signed in on this Mac until you sign out.")
                     .font(.caption).foregroundStyle(.secondary)

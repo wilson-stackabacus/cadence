@@ -155,8 +155,8 @@ final class WindowManager: NSObject, NSWindowDelegate {
             w.setFrameAutosaveName("CadenceMain")
             mainWindow = w
         }
-        NSApp.activate(ignoringOtherApps: true)
-        mainWindow?.makeKeyAndOrderFront(nil)
+        if !LaunchOptions.has("-noActivate") { NSApp.activate(ignoringOtherApps: true) }
+        if LaunchOptions.has("-noActivate") { mainWindow?.orderFront(nil) } else { mainWindow?.makeKeyAndOrderFront(nil) }
     }
 
     func showCheckIn(reason: String) {
@@ -179,7 +179,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
             checkInWindow = w
         }
         checkInWindow?.center()
-        NSApp.activate(ignoringOtherApps: true)
+        if !LaunchOptions.has("-noActivate") { NSApp.activate(ignoringOtherApps: true) }
         checkInWindow?.makeKeyAndOrderFront(nil)
     }
 
