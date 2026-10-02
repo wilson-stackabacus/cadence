@@ -245,7 +245,7 @@ final class CalendarImporter: ObservableObject {
     /// A Google event as a silent checklist task. Must match the web app field-for-field.
     static func task(from ev: GoogleEvent) -> PlanTask {
         let raw = ev.id.split(separator: "|", maxSplits: 1).last.map(String.init) ?? ev.id
-        var t = PlanTask(id: stableUUID("google:\(raw)"), title: ev.title, notes: ev.location ?? "",
+        var t = PlanTask(id: stableUUID("google:\(raw)"), title: ev.title, notes: eventNotes(ev.details, ev.location),
                          startDate: ev.start.startOfDay,
                          timeMinutes: ev.isAllDay ? nil : ev.start.minutesSinceMidnight,
                          durationMinutes: ev.isAllDay ? 30 : max(5, Int(ev.end.timeIntervalSince(ev.start) / 60)),

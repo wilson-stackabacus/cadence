@@ -154,7 +154,7 @@ export async function events(userId, calendarIds, timeMin, timeMax) {
         out.push({
           id: `${calId}|${e.id}`, calendarID: calId, title: e.summary || '(No title)',
           start: e.start.dateTime || e.start.date, end: e.end?.dateTime || e.end?.date,
-          isAllDay: allDay, location: e.location ?? null, link: e.htmlLink ?? null, colorHex: color(calId),
+          isAllDay: allDay, location: e.location ?? null, description: e.description ?? null, link: e.htmlLink ?? null, colorHex: color(calId),
         });
       }
       pageToken = j.nextPageToken;
@@ -198,7 +198,7 @@ function shapeEvent(e, calId) {
   return {
     id: `${calId}|${e.id}`, calendarID: calId, title: e.summary || '(No title)',
     start: e.start.dateTime || e.start.date, end: e.end?.dateTime || e.end?.date,
-    isAllDay: Boolean(e.start.date), location: e.location ?? null, link: e.htmlLink ?? null,
+    isAllDay: Boolean(e.start.date), location: e.location ?? null, description: e.description ?? null, link: e.htmlLink ?? null,
   };
 }
 
@@ -275,5 +275,30 @@ export async function createEvent(userId, e) {
     query.conferenceDataVersion = '1';
   }
   const j = await api(userId, 'POST', `/calendars/${enc(e.calendarID || 'primary')}/events`, { query, body });
+  return { id: j.id, link: j.htmlLink, calendarID: e.calendarID || 'primary' };
+}
+
+/** Pushes a Cadence edit of a synced event back to Google (title, notes, time). */
+export async function updateEvent(userId, e) {
+  const tz = e.timeZone || 'UTC';
+  const body = { summary: e.title, description: e.details ?? '' };
+  if (e.allDay) {
+    body.start = { date: e.startDate, dateTime: null, timeZone: null };
+    body.end = { date: e.endDate, dateTime: null, timeZone: null };
+  } else {
+    body.start = { dateTime: e.start, timeZone: tz, date: null };
+    body.end = { dateTime: e.end, timeZone: tz, date: null };
+  }
+  const j = await api(userId, 'PATCH', `/calendars/${enc(e.calendarID || 'primary')}/events/${enc(e.eventId)}`, { body });
   return { id: j.id, link: j.htmlLink };
+}
+
+/** Deletes a synced event from Google Calendar. Already-gone counts as success. */
+export async function deleteEvent(userId, { calendarID, eventId }) {
+  try {
+    await api(userId, 'DELETE', `/calendars/${enc(calendarID || 'primary')}/events/${enc(eventId)}`);
+  } catch (err) {
+    if (!/404|410|Not Found|deleted/i.test(err.message)) throw err;
+  }
+  return { ok: true };
 }

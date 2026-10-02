@@ -749,6 +749,13 @@ function renderModal() {
     ${m.error ? `<div class="error">${esc(m.error)}</div>` : ''}
     </div><div class="foot"><span class="grow"></span><button type="button" class="btn" data-act="close">Cancel</button>
       <button class="btn primary" style="background:var(--red)" ${m.working ? 'disabled' : ''}>${m.working ? 'Deleting…' : 'Delete forever'}</button></div></form>`;
+  else if (m.type === 'delete-google') html = `<div class="dialog sm"><div class="body">
+    <h2>Remove “${esc(m.task.title)}”?</h2>
+    <div class="muted">This event is synced with Google Calendar.</div>
+    ${m.error ? `<div class="error">${esc(m.error)}</div>` : ''}</div>
+    <div class="foot" style="flex-wrap:wrap"><button class="btn" data-act="close">Cancel</button><span class="grow"></span>
+      <button class="btn" data-act="google-hide">Hide in Cadence</button>
+      <button class="btn primary" style="background:var(--red)" data-act="google-delete" ${m.working ? 'disabled' : ''}>${m.working ? 'Deleting…' : 'Delete from Google too'}</button></div></div>`;
   else if (m.type === 'confirm') html = `<div class="dialog sm"><div class="body"><h2>${esc(m.title)}</h2><div class="muted">${esc(m.text)}</div></div>
     <div class="foot"><span class="grow"></span><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="confirm-yes">${esc(m.yes)}</button></div></div>`;
   root.innerHTML = `<div class="overlay ${ui.modalFresh ? 'opening' : ''}" data-act="overlay">${html}</div>`;
@@ -852,6 +859,8 @@ function openEditor(task, isNew) {
   const end = M.endOf(task.recurrence);
   openModal({
     type: 'editor', isNew, error: null, saving: false, addToGoogle: false,
+    // New events sync with Google Calendar by default when it's connected.
+    syncGoogle: isNew && M.isEvent(task) && store.google.connected,
     draft: structuredClone(task),
     date: M.dateKey(task.startDate),
     hasTime: task.timeMinutes != null,
@@ -892,6 +901,9 @@ function editorDialog(m) {
     </div>
     ${overlaps.length ? `<div class="fieldset"><div class="legend">${ic('layers')} Overlaps with</div>${overlaps.map(l => `<div class="small">${esc(l)}</div>`).join('')}
       <div class="small muted">That’s fine: this task’s reminders will still fire on time, even in the middle of the other one.</div></div>` : ''}
+    ${d.source === 'google' && !m.isNew ? `<div class="fieldset"><div class="legend">${ic('sync')} Synced with Google Calendar</div>
+      <div class="small muted">Changes you save here update the event in Google Calendar, and changes made in Google show up here. Repeats are managed in Google Calendar.</div>
+      ${d.externalURL ? `<a class="small" href="${esc(d.externalURL)}" target="_blank" rel="noopener">${ic('link')} Open in Google Calendar</a>` : ''}</div>` : `
     <div class="fieldset"><div class="legend">Repeat</div>
       <div class="grid2"><label class="field"><span>Repeats</span><select class="input" data-edit="frequency" data-rerender>${M.FREQUENCIES.map(([v, l]) => `<option value="${v}" ${r.frequency === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       ${r.frequency !== 'none' ? `<label class="field"><span>Every</span><div class="row"><input class="input" type="number" min="1" max="99" style="width:80px" data-edit="interval" data-rerender value="${r.interval}"><span>${unit}${r.interval > 1 ? 's' : ''}</span></div></label>` : ''}</div>
@@ -904,6 +916,7 @@ function editorDialog(m) {
         ${m.endMode === 'afterCount' ? `<label class="field"><span>Times</span><input class="input" type="number" min="1" max="999" data-edit="endCount" data-rerender value="${m.endCount}"></label>` : ''}</div>
         <div class="small muted">${esc(M.recurrenceSummary(preview, M.parseKey(m.date)))}</div>` : ''}
     </div>
+    `}
     <div class="fieldset"><div class="legend">Reminders</div>
       <label class="check"><input type="checkbox" data-edit="notify" data-rerender ${d.channels.length ? 'checked' : ''}>
         ${d.channels.length ? `${ic('bell')} Notify me about this task` : `${ic('bell-off')} No notifications — stays on the checklist quietly`}</label>
@@ -915,7 +928,10 @@ function editorDialog(m) {
       ${d.source ? `<div class="small muted">Imported from ${d.source === 'calendly' ? 'Calendly' : 'Google Calendar'}. Its title and time update on each import.</div>` : ''}
     </div>
     <div class="fieldset"><div class="legend">Color</div><div class="swatches">${Object.entries(M.COLORS).map(([k, v]) => `<button type="button" class="swatch ${d.color === k ? 'on' : ''}" style="background:${v}" data-act="edit-color" data-color="${k}" title="${k}"></button>`).join('')}</div></div>
-    ${store.google.connected && !d.googleEventID ? `<label class="check"><input type="checkbox" data-edit="addToGoogle" ${m.addToGoogle ? 'checked' : ''}>Also add to Google Calendar${r.frequency !== 'none' ? ' (with the repeat schedule)' : ''}</label>` : ''}
+    ${!store.google.connected || d.googleEventID || d.source ? '' : M.isEvent(d)
+      ? `<label class="check"><input type="checkbox" data-edit="syncGoogle" data-rerender ${m.syncGoogle ? 'checked' : ''}>${ic('sync')} Sync with Google Calendar</label>
+         <div class="small muted" style="margin-top:-8px">${m.syncGoogle ? `Creates it in your Google Calendar${r.frequency !== 'none' ? ' (with the repeat schedule)' : ''}; edits stay in sync both ways.` : 'Keep this event in Cadence only.'}</div>`
+      : `<label class="check"><input type="checkbox" data-edit="addToGoogle" ${m.addToGoogle ? 'checked' : ''}>Also add to Google Calendar${r.frequency !== 'none' ? ' (with the repeat schedule)' : ''}</label>`}
     ${m.error ? `<div class="error">${esc(m.error)}</div>` : ''}
     </div><div class="foot">${!m.isNew ? `<button type="button" class="btn danger" data-act="delete-task" data-task="${d.id}">Delete</button>` : ''}<span class="grow"></span>
       <button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" ${m.saving ? 'disabled' : ''}>${m.isNew ? 'Add Task' : 'Save'}</button></div></form>`;
@@ -947,6 +963,7 @@ function readEditorInputs() {
   else if (root.querySelector('[data-edit="channel"]')) m.draft.channels = [...root.querySelectorAll('[data-edit="channel"]:checked')].map(e => e.value);
   else if (notify?.checked) m.draft.channels = [...store.settings.defaultChannels];
   if (val('addToGoogle')) m.addToGoogle = val('addToGoogle').checked;
+  if (val('syncGoogle')) m.syncGoogle = val('syncGoogle').checked;
 }
 
 async function saveEditor() {
@@ -961,6 +978,45 @@ async function saveEditor() {
   if (t.recurrence.frequency !== 'weekly') t.recurrence.weekdays = [];
   t.reminderOffsets = t.reminderOffsets.filter(o => o >= 0 || (t.timeMinutes != null && -o < t.durationMinutes));
   if (!t.reminderOffsets.length) t.reminderOffsets = [0];
+  const day0 = M.parseKey(m.date);
+  const start0 = t.timeMinutes != null ? M.dayAt(day0, t.timeMinutes) : day0;
+  const googleFields = {
+    title: t.title, details: t.notes, allDay: t.timeMinutes == null,
+    start: M.iso(start0), end: M.iso(M.addMinutes(start0, t.durationMinutes)),
+    startDate: M.dateKey(day0), endDate: M.dateKey(M.addDays(day0, 1)),
+  };
+
+  // Editing an event that's synced with Google: save here, then push the change to Google.
+  if (!m.isNew && t.source === 'google' && t.googleEventID) {
+    store.upsertTask(t);
+    closeModal();
+    store.updateGoogleEvent({ ...googleFields, calendarID: t.sourceCalendar || 'primary', eventId: t.googleEventID })
+      .then(() => toast('Updated in Google Calendar too', { icon: 'sync', tone: 'good' }))
+      .catch(e => toast(`Saved in Cadence, but Google Calendar didn't update: ${e.message}`, { icon: 'alert', tone: 'bad' }));
+    return;
+  }
+
+  // A new event that syncs with Google: create it in Google first, then keep it as the synced copy.
+  if (m.isNew && M.isEvent(t) && m.syncGoogle && store.google.connected) {
+    m.saving = true; renderModal();
+    try {
+      const ev = await store.createGoogleEvent({ ...googleFields, rrule: M.rrule(t.recurrence, day0) });
+      if (t.recurrence.frequency === 'none') {
+        // Same ID the importer would give it, so it's never imported twice.
+        store.upsertTask({ ...t, id: await M.stableUUID(`google:${ev.id}`), kind: 'event', source: 'google', googleEventID: ev.id,
+          sourceCalendar: ev.calendarID || 'primary', ...(ev.link ? { externalURL: ev.link } : {}) });
+      }
+      closeModal();
+      toast(t.recurrence.frequency === 'none' ? 'Event added to Cadence and Google Calendar' : 'Repeating event created in Google Calendar; its dates appear here in a moment',
+        { icon: 'sync', tone: 'good' });
+      if (t.recurrence.frequency !== 'none') runImport();
+    } catch (e) {
+      store.upsertTask(t);
+      m.saving = false; m.error = `Saved in Cadence only — Google Calendar failed: ${e.message}`; renderModal();
+    }
+    return;
+  }
+
   store.upsertTask(t);
   if (!m.addToGoogle) { closeModal(); return; }
   m.saving = true; renderModal();
@@ -1088,6 +1144,7 @@ const actions = {
   'delete-task': el => {
     const t = store.tasks.get(el.dataset.task);
     if (!t) return;
+    if (t.source === 'google' && t.googleEventID && store.google.connected) { openModal({ type: 'delete-google', task: t }); return; }
     const copy = structuredClone(t);
     store.deleteTask(t.id);
     if (ui.modal) closeModal();
@@ -1151,6 +1208,24 @@ const actions = {
   'test-reminder': () => reminders.deliver({ kind: 'test', title: 'Test reminder', body: 'This is how Cadence reminders will look.', tint: '#0a84ff' }, store.settings.defaultChannels),
   'google-refresh': () => store.refreshGoogle(),
   'delete-account': () => openModal({ type: 'delete-account' }),
+  'google-hide': () => {
+    const t = ui.modal.task;
+    store.deleteTask(t.id);   // imported items are hidden, not deleted
+    closeModal();
+    toast(`Hid “${t.title}” in Cadence`, { icon: 'trash', undo: () => store.upsertTask({ ...store.tasks.get(t.id), archived: false }) });
+  },
+  'google-delete': async () => {
+    const m = ui.modal, t = m.task;
+    m.working = true; renderModal();
+    try {
+      await store.deleteGoogleEvent(t.sourceCalendar || 'primary', t.googleEventID);
+      store.deleteTask(t.id);
+      closeModal();
+      toast(`Deleted “${t.title}” from Cadence and Google Calendar`, { icon: 'trash' });
+    } catch (e) {
+      m.working = false; m.error = `Google Calendar didn't delete it: ${e.message}`; renderModal();
+    }
+  },
   'calendly-refresh': () => store.refreshCalendly(),
   'calendly-disconnect': () => confirmThen('Disconnect Calendly?', 'Meetings already on your checklist stay; new ones won’t be imported.', 'Disconnect', () => store.disconnectCalendly()),
   'import-now': () => runImport({ manual: true }),
@@ -1428,7 +1503,7 @@ async function googleTask(e) {
   const st = e.isAllDay ? M.parseKey(e.start) : new Date(e.start);
   const en = e.isAllDay ? M.parseKey(e.end) : new Date(e.end);
   return M.newTask({
-    id: await M.stableUUID(`google:${raw}`), title: e.title, notes: e.location || '',
+    id: await M.stableUUID(`google:${raw}`), title: e.title, notes: M.eventNotes(e.description, e.location),
     startDate: M.iso(M.startOfDay(st)), ...(e.isAllDay ? {} : { timeMinutes: M.minutesOf(st) }),
     durationMinutes: e.isAllDay ? 30 : Math.max(5, Math.floor((en - st) / 60_000)),
     channels: [], color: 'blue', source: 'google', googleEventID: raw, sourceCalendar: e.calendarID,

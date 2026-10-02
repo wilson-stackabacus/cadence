@@ -13,6 +13,8 @@ struct TaskEditor: View {
     @State private var endDate: Date
     @State private var endCount: Int
     @State private var addToGoogle = false
+    @State private var syncGoogle = false
+    @State private var syncDefaultApplied = false
     @State private var saving = false
     @State private var error: String?
     @State private var confirmDelete = false
@@ -95,6 +97,14 @@ struct TaskEditor: View {
                     }
                 }
 
+                if task.source == "google" && !isNew {
+                    Section("Synced with Google Calendar") {
+                        Label("Changes you save here update the event in Google Calendar, and changes made in Google show up here. Repeats are managed in Google Calendar.",
+                              systemImage: "arrow.triangle.2.circlepath")
+                            .font(.callout)
+                        if let u = task.externalURL.flatMap(URL.init(string:)) { Link("Open in Google Calendar", destination: u) }
+                    }
+                } else {
                 Section("Repeat") {
                     Picker("Repeats", selection: $task.recurrence.frequency) {
                         ForEach(Frequency.allCases) { Text($0.label).tag($0) }
@@ -120,6 +130,8 @@ struct TaskEditor: View {
                         Text(previewRecurrence.summary(start: task.startDate))
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                }
+
                 }
 
                 Section {
@@ -170,11 +182,18 @@ struct TaskEditor: View {
                     }
                 }
 
-                if google.isConnected && task.googleEventID == nil {
+                if google.isConnected && task.googleEventID == nil && task.source == nil {
                     Section("Google Calendar") {
-                        Toggle("Also add to Google Calendar", isOn: $addToGoogle)
-                        if addToGoogle && task.recurrence.isRepeating {
-                            Text("The repeat schedule is copied to Google too.").font(.caption).foregroundStyle(.secondary)
+                        if task.isEvent {
+                            Toggle(isOn: $syncGoogle) { Label("Sync with Google Calendar", systemImage: "arrow.triangle.2.circlepath") }
+                            Text(syncGoogle ? "Creates it in your Google Calendar\(task.recurrence.isRepeating ? " (with the repeat schedule)" : ""); edits stay in sync both ways."
+                                            : "Keep this event in Cadence only.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Toggle("Also add to Google Calendar", isOn: $addToGoogle)
+                            if addToGoogle && task.recurrence.isRepeating {
+                                Text("The repeat schedule is copied to Google too.").font(.caption).foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
@@ -206,14 +225,35 @@ struct TaskEditor: View {
                 task.recurrence.weekdays = [Calendar.current.component(.weekday, from: task.startDate)]
             }
         }
-        .confirmationDialog("Delete “\(task.title)”?", isPresented: $confirmDelete) {
-            Button("Delete task", role: .destructive) {
-                store.delete(taskID: task.id)
-                model.editingTask = nil
+        .confirmationDialog(isGoogleSynced ? "Remove “\(task.title)”?" : "Delete “\(task.title)”?", isPresented: $confirmDelete) {
+            if isGoogleSynced {
+                Button("Hide in Cadence") { store.delete(taskID: task.id); model.editingTask = nil }
+                Button("Delete from Google Calendar too", role: .destructive) {
+                    let t = task
+                    Task {
+                        do {
+                            try await google.deleteEvent(calendarID: t.sourceCalendar ?? "primary", eventID: t.googleEventID ?? "")
+                            store.delete(taskID: t.id)
+                            model.editingTask = nil
+                        } catch {
+                            self.error = "Google Calendar didn't delete it: \(error.localizedDescription)"
+                        }
+                    }
+                }
+            } else {
+                Button(task.isEvent ? "Delete event" : "Delete task", role: .destructive) {
+                    store.delete(taskID: task.id)
+                    model.editingTask = nil
+                }
             }
         } message: {
-            Text("Reflections you've written for it are kept.")
+            Text(isGoogleSynced ? "This event is synced with Google Calendar." : task.isEvent ? "This can't be undone." : "Reflections you've written for it are kept.")
         }
+        .onAppear {
+            // New events sync with Google Calendar by default when it's connected.
+            if !syncDefaultApplied { syncDefaultApplied = true; syncGoogle = isNew && task.isEvent && google.isConnected }
+        }
+        .onChange(of: task.kind) { _, _ in if isNew { syncGoogle = task.isEvent && google.isConnected } }
     }
 
     /// Other timed tasks / Google events this one overlaps on its start day.
@@ -234,6 +274,8 @@ struct TaskEditor: View {
         return lines
     }
 
+    private var isGoogleSynced: Bool { task.source == "google" && task.googleEventID != nil && google.isConnected }
+
     private var previewRecurrence: Recurrence {
         var r = task.recurrence
         r.end = endMode == 1 ? .onDate(endDate) : endMode == 2 ? .afterCount(endCount) : .never
@@ -250,8 +292,50 @@ struct TaskEditor: View {
         // "During" reminders only make sense inside a timed task's span.
         t.reminderOffsets = t.reminderOffsets.filter { $0 >= 0 || (t.timeMinutes != nil && -$0 < t.durationMinutes) }
         if t.reminderOffsets.isEmpty { t.reminderOffsets = [0] }
-        store.upsert(t)
+        let start0 = t.timeMinutes.map { dayAt(t.startDate, minutes: $0) } ?? t.startDate
+        let googleEvent = NewGoogleEvent(title: t.title, details: t.notes, start: start0,
+                                         end: start0.adding(minutes: t.durationMinutes), allDay: t.timeMinutes == nil,
+                                         rrule: t.recurrence.rrule(start: t.startDate))
 
+        // Editing an event synced with Google: save here, then push the change to Google.
+        if !isNew, t.source == "google", let eventID = t.googleEventID {
+            store.upsert(t)
+            model.editingTask = nil
+            var update = googleEvent
+            update.rrule = nil
+            Task { try? await google.update(calendarID: t.sourceCalendar ?? "primary", eventID: eventID, update) }
+            return
+        }
+
+        // A new event that syncs with Google: create it there first, then keep it as the synced copy
+        // (same ID the importer would give it, so it's never imported twice).
+        if isNew && t.isEvent && syncGoogle && google.isConnected {
+            saving = true
+            Task {
+                do {
+                    let ev = try await google.create(googleEvent)
+                    if !t.recurrence.isRepeating, let ev {
+                        let raw = ev.id.split(separator: "|", maxSplits: 1).last.map(String.init) ?? ev.id
+                        var synced = t
+                        synced.id = stableUUID("google:\(raw)")
+                        synced.kind = "event"; synced.source = "google"; synced.googleEventID = raw
+                        synced.sourceCalendar = ev.calendarID; synced.externalURL = ev.link?.absoluteString
+                        store.upsert(synced)
+                    } else {
+                        // Repeating: Google holds the schedule; its dates arrive with the next import.
+                        await model.importer.importNow(includeCalendly: false)
+                    }
+                    model.editingTask = nil
+                } catch {
+                    store.upsert(t)
+                    self.error = "Saved in Cadence only — Google Calendar failed: \(error.localizedDescription)"
+                }
+                saving = false
+            }
+            return
+        }
+
+        store.upsert(t)
         guard addToGoogle else { model.editingTask = nil; return }
         saving = true
         Task {

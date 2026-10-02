@@ -3,7 +3,7 @@
 // task records as the Mac and web importers (same stable IDs, same fields, user's time zone).
 import { db, sync } from './db.js';
 import * as google from './google.js';
-import { stableUUID, iso } from '../public/js/model.js';
+import { stableUUID, iso, eventNotes } from '../public/js/model.js';
 
 function partsIn(date, tz) {
   const f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -34,7 +34,7 @@ export async function toTask(e, tz) {
     duration = Math.max(5, Math.floor((new Date(e.end) - s) / 60_000));
   }
   return {
-    id: await stableUUID(`google:${raw}`), title: e.title, notes: e.location || '', startDate: iso(startDate),
+    id: await stableUUID(`google:${raw}`), title: e.title, notes: eventNotes(e.description, e.location), startDate: iso(startDate),
     ...(timeMinutes != null ? { timeMinutes } : {}), durationMinutes: duration,
     recurrence: { frequency: 'none', interval: 1, weekdays: [], end: { never: {} } },
     reminderOffsets: [0], channels: [], color: 'blue', completions: {}, skipped: [], createdAt: iso(new Date()),

@@ -204,6 +204,14 @@ async function route(req, res, url) {
     const b = await readJson(req);
     return send(res, 200, await google.freeBusy(user.id, b.calendars ?? [], b.from, b.to));
   }
+  if (p === '/api/google/events/update' && m === 'POST') {
+    const user = await requireUser(req);
+    return send(res, 200, await google.updateEvent(user.id, await readJson(req)));
+  }
+  if (p === '/api/google/events/delete' && m === 'POST') {
+    const user = await requireUser(req);
+    return send(res, 200, await google.deleteEvent(user.id, await readJson(req)));
+  }
   if (p === '/api/google/events' && m === 'POST') {
     const user = await requireUser(req);
     return send(res, 200, await google.createEvent(user.id, await readJson(req)));

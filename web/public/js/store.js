@@ -398,6 +398,18 @@ class Store {
 
   disconnectGoogle = () => api('/api/google/disconnect', { method: 'POST', body: {} }).then(() => this.refreshGoogle());
   freeBusy = (from, to) => api('/api/google/freebusy', { method: 'POST', body: { from: M.iso(from), to: M.iso(to), calendars: this.googleCalendarIDs } });
+  /** Push a Cadence edit of a synced event to Google; refresh the calendars afterwards. */
+  async updateGoogleEvent(e) {
+    const r = await api('/api/google/events/update', { method: 'POST', body: { ...e, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } });
+    this.refreshGoogleView();
+    return r;
+  }
+  async deleteGoogleEvent(calendarID, eventId) {
+    const r = await api('/api/google/events/delete', { method: 'POST', body: { calendarID, eventId } });
+    this.refreshGoogleView();
+    return r;
+  }
+
   async createGoogleEvent(e) {
     const r = await api('/api/google/events', { method: 'POST', body: { ...e, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } });
     this.google.months.clear();

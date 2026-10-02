@@ -75,6 +75,21 @@ func offsetString(_ minutes: Int) -> String {
     }
 }
 
+/// Notes for an imported Google event: its description as plain text, else its location.
+/// Identical to eventNotes() in the web app (model.js) and the server importer, so devices agree.
+func eventNotes(_ description: String?, _ location: String?) -> String {
+    var t = description ?? ""
+    let rules: [(String, String)] = [
+        ("(?i)<br\\s*/?>", "\n"), ("(?i)</p>", "\n"), ("<[^>]+>", ""),
+        ("&nbsp;", " "), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&amp;", "&"),
+    ]
+    for (pattern, replacement) in rules {
+        t = t.replacingOccurrences(of: pattern, with: replacement, options: .regularExpression)
+    }
+    t = t.trimmingCharacters(in: .whitespacesAndNewlines)
+    return t.isEmpty ? (location ?? "").trimmingCharacters(in: .whitespacesAndNewlines) : t
+}
+
 /// Counts words the way a person would: whitespace-separated chunks containing a letter or digit.
 func countWords(_ text: String) -> Int {
     text.split(whereSeparator: { $0.isWhitespace || $0.isNewline })

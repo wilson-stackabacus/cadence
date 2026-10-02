@@ -19,6 +19,7 @@ struct GoogleEvent: Identifiable, Hashable {
     let location: String?
     let link: URL?
     let colorHex: String?
+    var details: String? = nil
 
     var color: Color { colorHex.flatMap(Color.init(hex:)) ?? .blue }
 }
@@ -126,7 +127,7 @@ final class GoogleCalendar: ObservableObject {
         return GoogleEvent(id: id, calendarID: d["calendarID"] as? String ?? "primary", title: d["title"] as? String ?? "(No title)",
                            start: start, end: max(end, start.addingTimeInterval(60)), isAllDay: allDay,
                            location: d["location"] as? String, link: (d["link"] as? String).flatMap(URL.init(string:)),
-                           colorHex: d["colorHex"] as? String)
+                           colorHex: d["colorHex"] as? String, details: d["description"] as? String)
     }
 
     private var calendarsParam: URLQueryItem {
@@ -440,7 +441,8 @@ final class GoogleCalendar: ObservableObject {
             loadedMonths.remove(DateKey.string(e.start.startOfMonth))
             ensure(from: e.start, to: e.start.adding(days: 1))
             guard let id = r["id"] as? String else { return nil }
-            return GoogleEvent(id: "\(e.calendarID)|\(id)", calendarID: e.calendarID, title: e.title, start: e.start, end: e.end,
+            let cal = r["calendarID"] as? String ?? e.calendarID
+            return GoogleEvent(id: "\(cal)|\(id)", calendarID: e.calendarID, title: e.title, start: e.start, end: e.end,
                                isAllDay: e.allDay, location: nil, link: (r["link"] as? String).flatMap(URL.init(string:)), colorHex: nil)
         }
         var body: [String: Any] = ["summary": e.title, "description": e.details]
@@ -468,6 +470,40 @@ final class GoogleCalendar: ObservableObject {
         loadedMonths.remove(key)
         ensure(from: e.start, to: e.start.adding(days: 1))
         return ev
+    }
+
+    /// Pushes a Cadence edit of a synced event to Google (title, notes, time).
+    func update(calendarID: String, eventID: String, _ e: NewGoogleEvent) async throws {
+        let tz = TimeZone.current.identifier
+        if viaServer {
+            _ = try await server("POST", "/api/google/events/update", [], [
+                "calendarID": calendarID, "eventId": eventID, "title": e.title, "details": e.details, "allDay": e.allDay,
+                "start": Self.iso.string(from: e.start), "end": Self.iso.string(from: e.end),
+                "startDate": DateKey.string(e.start), "endDate": DateKey.string(e.start.adding(days: 1)), "timeZone": tz,
+            ])
+        } else {
+            var body: [String: Any] = ["summary": e.title, "description": e.details]
+            if e.allDay {
+                body["start"] = ["date": DateKey.string(e.start), "dateTime": NSNull(), "timeZone": NSNull()]
+                body["end"] = ["date": DateKey.string(e.start.adding(days: 1)), "dateTime": NSNull(), "timeZone": NSNull()]
+            } else {
+                body["start"] = ["dateTime": Self.iso.string(from: e.start), "timeZone": tz, "date": NSNull()]
+                body["end"] = ["dateTime": Self.iso.string(from: e.end), "timeZone": tz, "date": NSNull()]
+            }
+            _ = try await api("PATCH", "/calendars/\(Self.encode(calendarID))/events/\(Self.encode(eventID))", body: body)
+        }
+        refreshLoadedMonths()
+    }
+
+    /// Deletes a synced event from Google Calendar (already gone counts as done).
+    func deleteEvent(calendarID: String, eventID: String) async throws {
+        if viaServer {
+            _ = try await server("POST", "/api/google/events/delete", [], ["calendarID": calendarID, "eventId": eventID])
+        } else {
+            do { _ = try await api("DELETE", "/calendars/\(Self.encode(calendarID))/events/\(Self.encode(eventID))") }
+            catch GoogleError.http(let code, _) where code == 404 || code == 410 { }
+        }
+        refreshLoadedMonths()
     }
 
     // MARK: HTTP
@@ -566,7 +602,7 @@ final class GoogleCalendar: ObservableObject {
                            start: start, end: max(end, start.addingTimeInterval(60)), isAllDay: allDay,
                            location: item["location"] as? String,
                            link: (item["htmlLink"] as? String).flatMap(URL.init(string:)),
-                           colorHex: colorHex)
+                           colorHex: colorHex, details: item["description"] as? String)
     }
 
     private static func encode(_ s: String) -> String {

@@ -17,6 +17,16 @@ export async function stableUUID(key) {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
+/** Notes for an imported Google event: its description as plain text, else its location.
+ *  The Mac (GoogleCalendar.swift) and server (importer.js) use the exact same rule. */
+export function eventNotes(description, location) {
+  const text = String(description || '')
+    .replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+    .trim();
+  return text || String(location || '').trim();
+}
+
 export const isSilent = task => !(task.channels && task.channels.length);
 /** Events live on the calendars only: never on the checklist, no check-off, no reflection.
  *  Imported items (Google, Calendly) are events unless you explicitly make them a task. */

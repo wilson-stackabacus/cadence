@@ -106,6 +106,25 @@ enum DebugDriver {
                 log.append("googleTasks=" + model.store.tasks.filter { $0.source == "google" }.map { "\($0.title)[\($0.isSilent ? "silent" : "loud")\($0.archived == true ? ",archived" : "")]" }.sorted().joined(separator: "; "))
                 let busy = (try? await model.google.busyIntervals(from: Date().startOfDay, to: Date().startOfDay.adding(days: 1)))?.count ?? -1
                 log.append("freebusy intervals=\(busy)")
+                // Cadence → Google sync: create, import (no duplicate), edit, delete.
+                let start = dayAt(Date(), minutes: 16 * 60)
+                if let ev = try? await model.google.create(NewGoogleEvent(title: "Mac synced event", details: "from the Mac", start: start, end: start.adding(minutes: 45))) {
+                    let raw = ev.id.split(separator: "|", maxSplits: 1).last.map(String.init) ?? ev.id
+                    var t = PlanTask(id: stableUUID("google:\(raw)"), title: "Mac synced event", notes: "from the Mac", startDate: Date().startOfDay,
+                                     timeMinutes: 16 * 60, durationMinutes: 45, channels: [], color: .teal)
+                    t.kind = "event"; t.source = "google"; t.googleEventID = raw; t.sourceCalendar = ev.calendarID
+                    model.store.upsert(t)
+                    await model.importer.importNow(includeCalendly: false)
+                    let copies = model.store.tasks.filter { $0.googleEventID == raw && $0.archived != true }.count
+                    try? await model.google.update(calendarID: ev.calendarID, eventID: raw,
+                                                   NewGoogleEvent(title: "Mac synced event (edited)", details: "from the Mac", start: start, end: start.adding(minutes: 45)))
+                    let afterEdit = try? await model.google.fetchEvent(calendarID: ev.calendarID, eventID: raw)
+                    try? await model.google.deleteEvent(calendarID: ev.calendarID, eventID: raw)
+                    let afterDelete = try? await model.google.fetchEvent(calendarID: ev.calendarID, eventID: raw)
+                    log.append("mac sync: created=\(raw) copiesAfterImport=\(copies) notes=\(model.store.task(t.id)?.notes ?? "-") googleTitleAfterEdit=\(afterEdit?.title ?? "-") goneAfterDelete=\(afterDelete == nil)")
+                } else {
+                    log.append("mac sync: create failed")
+                }
             }
             model.store.upsert(PlanTask(title: "Created on the Mac", startDate: Date().startOfDay, timeMinutes: 20 * 60))
             sync.sync()

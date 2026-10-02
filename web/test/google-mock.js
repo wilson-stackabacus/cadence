@@ -12,9 +12,30 @@ const events = [
   { id: 'mockevt3', status: 'confirmed', summary: 'Field trip (from Google)', start: { date: ymd(day(2)) }, end: { date: ymd(day(3)) } },
   { id: 'mockgone', status: 'cancelled' },
 ];
-createServer((req, res) => {
+let nextId = 1;
+createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const send = j => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(j)); };
+  let body = {};
+  if (req.method === 'POST' || req.method === 'PATCH') { let raw = ''; for await (const c of req) raw += c; try { body = JSON.parse(raw || '{}'); } catch {} }
+  // Writes (create / edit / delete), so Cadence → Google sync can be tested too.
+  if (req.method === 'POST' && /\/calendars\/[^/]+\/events$/.test(url.pathname)) {
+    const e = { id: `created${nextId++}`, status: 'confirmed', summary: body.summary, description: body.description, start: body.start, end: body.end, htmlLink: 'https://calendar.google.com/new' };
+    if (body.recurrence) e.recurrence = body.recurrence;
+    events.push(e); console.log('CREATE', e.id, e.summary); return send(e);
+  }
+  const target = url.pathname.match(/\/calendars\/[^/]+\/events\/([^/]+)$/);
+  if (target && req.method === 'PATCH') {
+    const e = events.find(x => x.id === target[1]); if (!e) { res.writeHead(404); return res.end('{}'); }
+    for (const k of ['summary', 'description']) if (k in body) e[k] = body[k];
+    if (body.start) e.start = Object.fromEntries(Object.entries(body.start).filter(([, v]) => v != null));
+    if (body.end) e.end = Object.fromEntries(Object.entries(body.end).filter(([, v]) => v != null));
+    console.log('PATCH', e.id, e.summary); return send(e);
+  }
+  if (target && req.method === 'DELETE') {
+    const e = events.find(x => x.id === target[1]); if (e) { e.status = 'cancelled'; console.log('DELETE', e.id); }
+    res.writeHead(204); return res.end();
+  }
   if (url.pathname.endsWith('/users/me/calendarList')) return send({ items: [{ id: 'mock@example.com', summary: 'Mock Calendar', primary: true, backgroundColor: '#4285f4', accessRole: 'owner' }] });
   if (/\/calendars\/[^/]+\/events$/.test(url.pathname)) {
     const showDeleted = url.searchParams.get('showDeleted') === 'true';
