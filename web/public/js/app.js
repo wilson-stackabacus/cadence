@@ -570,6 +570,8 @@ function settingsView() {
         <a class="btn" href="/api/account/export" download>${ic('copy')} Download my data</a></div>
       <div class="srow"><div>Delete account<div class="small muted">Permanently removes your account, tasks, reflections and connections from our servers.</div></div>
         <button class="btn danger" data-act="delete-account">${ic('trash')} Delete account…</button></div>
+      <div class="srow"><div>Desktop apps<div class="small muted">Cadence for Mac, Windows and Linux keeps reminders running in the background.</div></div>
+        <a class="btn" href="/#download" target="_blank">${ic('copy')} Download</a></div>
       <div class="srow"><div>Mac app<div class="small muted">In Cadence for Mac, open Settings › Sync with Cadence Web and sign in with this same username and password. That's all — it finds this site automatically.</div></div></div>
     </div></div>
 
@@ -1421,6 +1423,17 @@ function toast(text, { icon = 'check', undo, tone } = {}) {
   box.append(el);
   while (box.children.length > 3) box.firstElementChild.remove();
   setTimeout(close, undo ? 6000 : 2800);
+}
+
+// ---------- desktop app (Windows/Linux) ----------
+// The desktop wrapper exposes window.cadenceDesktop: wake/unlock events, tray commands, a tray badge.
+if (window.cadenceDesktop) {
+  window.cadenceDesktop.onWake(() => reminders.checkIn('Welcome back — check your list'));
+  window.cadenceDesktop.onCommand(cmd => {
+    if (cmd === 'check-in') reminders.checkIn('Daily check-in', { manual: true });
+    if (cmd === 'new-task') newTaskAt(new Date());
+  });
+  store.subscribe(() => window.cadenceDesktop.setBadge(store.user ? store.remainingToday() : 0));
 }
 
 // ---------- start ----------

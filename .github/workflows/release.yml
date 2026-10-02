@@ -1,0 +1,89 @@
+# Builds Cadence for Mac (native), Windows and Linux (desktop/) and publishes them as a GitHub
+# Release. The website's Download buttons link to /releases/latest/download/<fixed file name>.
+# Trigger: push a tag like v1.0.1, or run it manually from the Actions tab.
+name: Release apps
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.0.1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate Xcode project
+        run: brew install xcodegen && xcodegen generate
+      - name: Build universal app
+        run: |
+          xcodebuild -project Cadence.xcodeproj -target Cadence -configuration Release -sdk macosx \
+            ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO CODE_SIGN_IDENTITY=- build
+          lipo -archs build/Release/Cadence.app/Contents/MacOS/Cadence
+      - name: Zip
+        run: ditto -c -k --keepParent build/Release/Cadence.app Cadence-mac.zip
+      - uses: actions/upload-artifact@v4
+        with: { name: mac, path: Cadence-mac.zip }
+
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win
+            files: desktop/dist/Cadence-Setup.exe
+          - os: ubuntu-latest
+            target: linux
+            files: |
+              desktop/dist/Cadence.AppImage
+              desktop/dist/Cadence.deb
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: desktop/package-lock.json }
+      - run: npm ci
+      - name: Package
+        run: npx electron-builder --${{ matrix.target }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with: { name: ${{ matrix.target }}, path: '${{ matrix.files }}' }
+
+  release:
+    needs: [mac, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - run: ls -la out
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Cadence ${{ github.event.inputs.tag || github.ref_name }}
+          make_latest: true
+          files: out/*
+          body: |
+            Download Cadence for your computer. Your tasks, reflections and settings sync with your account on https://cadenceplanner.vercel.app.
+
+            | Platform | File |
+            |---|---|
+            | Mac (Apple Silicon & Intel, macOS 14+) | **Cadence-mac.zip** |
+            | Windows 10/11 | **Cadence-Setup.exe** |
+            | Linux | **Cadence.AppImage** (any distro) or **Cadence.deb** (Debian/Ubuntu) |
+
+            These builds aren't signed with paid Apple/Microsoft certificates yet, so the first launch needs one extra click:
+            - **Mac:** unzip, move Cadence to Applications, open it. If macOS says it can't verify the app, go to System Settings › Privacy & Security and click **Open Anyway**.
+            - **Windows:** if SmartScreen appears, click **More info › Run anyway**.
+            - **Linux (AppImage):** make it executable (`chmod +x Cadence.AppImage`) and run it.

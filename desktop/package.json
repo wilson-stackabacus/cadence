@@ -1,0 +1,77 @@
+{
+  "name": "cadence-desktop",
+  "productName": "Cadence",
+  "version": "1.0.0",
+  "description": "Cadence for Windows and Linux: your daily checklist with reminders, calendars and reflections.",
+  "author": "Cadence <cadencemain26@gmail.com>",
+  "homepage": "https://cadenceplanner.vercel.app",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:linux": "electron-builder --linux --publish never"
+  },
+  "build": {
+    "appId": "com.ryanpark.cadence.desktop",
+    "productName": "Cadence",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "offline.html",
+      "tray.png",
+      "tray@2x.png",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Cadence-Setup.exe"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "runAfterFinish": true
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Office",
+      "maintainer": "Cadence <cadencemain26@gmail.com>",
+      "synopsis": "Daily checklist with reminders and reflections",
+      "artifactName": "Cadence.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  },
+  "allowScripts": {
+    "electron@44.5.1": true,
+    "electron-winstaller": false
+  }
+}
