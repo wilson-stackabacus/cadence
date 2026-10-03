@@ -219,7 +219,9 @@ class Store {
   applyImport(source, items, from, to, { archiveMissing = true, archiveIds = new Set() } = {}) {
     let added = 0, updated = 0, removed = 0;
     const incoming = new Set(items.map(i => i.id));
-    const fields = ['title', 'notes', 'startDate', 'timeMinutes', 'durationMinutes', 'externalURL', 'googleEventID', 'sourceCalendar'];
+    // Google also decides open/closed ("show as free/busy"); Calendly bookings keep whatever you chose.
+    const fields = ['title', 'notes', 'startDate', 'timeMinutes', 'durationMinutes', 'externalURL', 'googleEventID', 'sourceCalendar',
+      ...(source === 'google' ? ['busy'] : [])];
     for (const item of items) {
       const cur = this.tasks.get(item.id);
       if (!cur) { this.upsertTask(item); added++; continue; }

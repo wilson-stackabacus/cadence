@@ -192,12 +192,16 @@ struct PlanTask: Codable, Identifiable, Hashable {
 
     /// "task" or "event"; nil means: event if imported, otherwise task.
     var kind: String?
+    /// Closed (true) items block their time; open (false) ones are just for info.
+    /// nil means the default: events closed, tasks open.
+    var busy: Bool?
 
     /// No channels = a silent item: it never pings.
     var isSilent: Bool { channels.isEmpty }
     var isImported: Bool { source != nil }
     /// Events live on the calendars only: never on the checklist, no check-off, no reflection.
     var isEvent: Bool { kind == "event" || (kind != "task" && source != nil) }
+    var isBusy: Bool { busy ?? isEvent }
 }
 
 /// One concrete instance of a (possibly repeating) task on a given day.
@@ -210,6 +214,7 @@ struct Occurrence: Identifiable, Hashable {
     var start: Date? { task.timeMinutes.map { dayAt(day, minutes: $0) } }
     var end: Date? { start?.adding(minutes: max(5, task.durationMinutes)) }
     var isEvent: Bool { task.isEvent }
+    var isBusy: Bool { task.isBusy }
     var isDone: Bool { !task.isEvent && task.completions[key] != nil }
     var isOverdue: Bool { !task.isEvent && !isDone && day < Date().startOfDay }
 }

@@ -15,6 +15,8 @@ struct TaskEditor: View {
     @State private var addToGoogle = false
     @State private var syncGoogle = false
     @State private var syncDefaultApplied = false
+    /// Once you pick open/closed yourself, switching Task/Event no longer changes it.
+    @State private var busyChosen = false
     @State private var saving = false
     @State private var error: String?
     @State private var confirmDelete = false
@@ -46,6 +48,7 @@ struct TaskEditor: View {
                 Spacer()
                 Picker("", selection: Binding(get: { task.isEvent ? "event" : "task" }, set: { k in
                     task.kind = k
+                    if !busyChosen { task.busy = k == "event" }   // events start closed, tasks open
                     if k == "event" && isNew {
                         if !hasTime { hasTime = true; time = dayAt(task.startDate, minutes: 9 * 60) }
                         if task.durationMinutes == 30 { task.durationMinutes = 60 }
@@ -83,6 +86,21 @@ struct TaskEditor: View {
                             }
                         }
                     }
+                }
+
+                Section {
+                    Picker("Your time", selection: Binding(get: { task.isBusy }, set: { task.busy = $0; busyChosen = true })) {
+                        Label("Closed", systemImage: "lock.fill").tag(true)
+                        Label("Open", systemImage: "eye").tag(false)
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("Your time")
+                } footer: {
+                    Text(task.isBusy
+                         ? "Blocks this time: it's taken out of your open time on Booking\(task.source == "google" || syncGoogle ? ", and shows as busy in Google Calendar" : "")."
+                         : "Just for info: it shows on your calendars, but you're still free to be booked then.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
 
                 if !overlaps.isEmpty {
@@ -295,7 +313,7 @@ struct TaskEditor: View {
         let start0 = t.timeMinutes.map { dayAt(t.startDate, minutes: $0) } ?? t.startDate
         let googleEvent = NewGoogleEvent(title: t.title, details: t.notes, start: start0,
                                          end: start0.adding(minutes: t.durationMinutes), allDay: t.timeMinutes == nil,
-                                         rrule: t.recurrence.rrule(start: t.startDate))
+                                         rrule: t.recurrence.rrule(start: t.startDate), busy: t.isBusy)
 
         // Editing an event synced with Google: save here, then push the change to Google.
         if !isNew, t.source == "google", let eventID = t.googleEventID {
@@ -344,7 +362,7 @@ struct TaskEditor: View {
                 let ev = try await google.create(NewGoogleEvent(
                     title: t.title, details: t.notes, start: start,
                     end: start.adding(minutes: t.durationMinutes), allDay: t.timeMinutes == nil,
-                    rrule: t.recurrence.rrule(start: t.startDate)))
+                    rrule: t.recurrence.rrule(start: t.startDate), busy: t.isBusy))
                 if var latest = store.task(t.id) {
                     latest.googleEventID = ev?.id
                     store.upsert(latest)

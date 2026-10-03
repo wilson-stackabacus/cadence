@@ -53,6 +53,11 @@ struct RootView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .keyboardShortcut("n", modifiers: .command)
+                    Button { model.newEvent() } label: {
+                        Label("New Event", systemImage: "calendar.badge.plus").frame(maxWidth: .infinity)
+                    }
+                    .controlSize(.large)
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
                     SyncIndicator()
                 }
                 .padding(12)

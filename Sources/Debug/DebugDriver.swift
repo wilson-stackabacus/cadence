@@ -103,7 +103,7 @@ enum DebugDriver {
                 log.append("google viaServer=\(model.google.viaServer) connected=\(model.google.isConnected) account=\(model.google.account ?? "-") calendars=\(model.google.calendars.map(\.summary)) eventsLoaded=\(model.google.events.values.map(\.title).sorted())")
                 await model.importer.importNow()
                 log.append("import: \(model.importer.lastSummary ?? "-")")
-                log.append("googleTasks=" + model.store.tasks.filter { $0.source == "google" }.map { "\($0.title)[\($0.isSilent ? "silent" : "loud")\($0.archived == true ? ",archived" : "")]" }.sorted().joined(separator: "; "))
+                log.append("googleTasks=" + model.store.tasks.filter { $0.source == "google" }.map { "\($0.title)[\($0.isSilent ? "silent" : "loud")\($0.archived == true ? ",archived" : ""),\($0.isBusy ? "closed" : "open")]" }.sorted().joined(separator: "; "))
                 let busy = (try? await model.google.busyIntervals(from: Date().startOfDay, to: Date().startOfDay.adding(days: 1)))?.count ?? -1
                 log.append("freebusy intervals=\(busy)")
                 // Cadence → Google sync: create, import (no duplicate), edit, delete.
@@ -117,11 +117,11 @@ enum DebugDriver {
                     await model.importer.importNow(includeCalendly: false)
                     let copies = model.store.tasks.filter { $0.googleEventID == raw && $0.archived != true }.count
                     try? await model.google.update(calendarID: ev.calendarID, eventID: raw,
-                                                   NewGoogleEvent(title: "Mac synced event (edited)", details: "from the Mac", start: start, end: start.adding(minutes: 45)))
+                                                   NewGoogleEvent(title: "Mac synced event (edited)", details: "from the Mac", start: start, end: start.adding(minutes: 45), busy: false))
                     let afterEdit = try? await model.google.fetchEvent(calendarID: ev.calendarID, eventID: raw)
                     try? await model.google.deleteEvent(calendarID: ev.calendarID, eventID: raw)
                     let afterDelete = try? await model.google.fetchEvent(calendarID: ev.calendarID, eventID: raw)
-                    log.append("mac sync: created=\(raw) copiesAfterImport=\(copies) notes=\(model.store.task(t.id)?.notes ?? "-") googleTitleAfterEdit=\(afterEdit?.title ?? "-") goneAfterDelete=\(afterDelete == nil)")
+                    log.append("mac sync: created=\(raw) copiesAfterImport=\(copies) notes=\(model.store.task(t.id)?.notes ?? "-") googleTitleAfterEdit=\(afterEdit?.title ?? "-") openAfterEdit=\(afterEdit?.transparent == true) goneAfterDelete=\(afterDelete == nil)")
                 } else {
                     log.append("mac sync: create failed")
                 }

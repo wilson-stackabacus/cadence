@@ -155,6 +155,7 @@ export async function events(userId, calendarIds, timeMin, timeMax) {
           id: `${calId}|${e.id}`, calendarID: calId, title: e.summary || '(No title)',
           start: e.start.dateTime || e.start.date, end: e.end?.dateTime || e.end?.date,
           isAllDay: allDay, location: e.location ?? null, description: e.description ?? null, link: e.htmlLink ?? null, colorHex: color(calId),
+          transparent: e.transparency === 'transparent',
         });
       }
       pageToken = j.nextPageToken;
@@ -199,6 +200,7 @@ function shapeEvent(e, calId) {
     id: `${calId}|${e.id}`, calendarID: calId, title: e.summary || '(No title)',
     start: e.start.dateTime || e.start.date, end: e.end?.dateTime || e.end?.date,
     isAllDay: Boolean(e.start.date), location: e.location ?? null, description: e.description ?? null, link: e.htmlLink ?? null,
+    transparent: e.transparency === 'transparent',
   };
 }
 
@@ -267,6 +269,7 @@ export async function createEvent(userId, e) {
     body.start = { dateTime: e.start, timeZone: tz };
     body.end = { dateTime: e.end, timeZone: tz };
   }
+  if (e.busy != null) body.transparency = e.busy ? 'opaque' : 'transparent';
   if (e.attendees?.length) body.attendees = e.attendees.map(a => ({ email: a.email, displayName: a.name }));
   if (e.rrule) body.recurrence = [e.rrule];
   const query = { sendUpdates: e.attendees?.length ? 'all' : 'none' };
@@ -278,7 +281,7 @@ export async function createEvent(userId, e) {
   return { id: j.id, link: j.htmlLink, calendarID: e.calendarID || 'primary' };
 }
 
-/** Pushes a Cadence edit of a synced event back to Google (title, notes, time). */
+/** Pushes a Cadence edit of a synced event back to Google (title, notes, time, open/closed). */
 export async function updateEvent(userId, e) {
   const tz = e.timeZone || 'UTC';
   const body = { summary: e.title, description: e.details ?? '' };
@@ -289,6 +292,7 @@ export async function updateEvent(userId, e) {
     body.start = { dateTime: e.start, timeZone: tz, date: null };
     body.end = { dateTime: e.end, timeZone: tz, date: null };
   }
+  if (e.busy != null) body.transparency = e.busy ? 'opaque' : 'transparent';
   const j = await api(userId, 'PATCH', `/calendars/${enc(e.calendarID || 'primary')}/events/${enc(e.eventId)}`, { body });
   return { id: j.id, link: j.htmlLink };
 }

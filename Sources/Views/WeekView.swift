@@ -22,6 +22,9 @@ struct WeekView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScreenHeader(title: title, subtitle: "Double-click an empty slot to add a task there.") {
+                Button { model.newEvent(on: weekStart.isSameDay(Date().startOfWeek) ? Date() : weekStart) } label: {
+                    Label("New Event", systemImage: "calendar.badge.plus")
+                }
                 CalendarNav(onPrev: { weekStart = weekStart.adding(days: -7) },
                             onToday: { weekStart = Date().startOfWeek },
                             onNext: { weekStart = weekStart.adding(days: 7) })
@@ -245,7 +248,12 @@ struct TimedBlock: View {
         .padding(.vertical, 3)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(item.color.opacity(item.isDone ? 0.10 : (item.isCalendarEvent ? 0.14 : 0.24)))
-        .overlay(alignment: .leading) { Rectangle().fill(item.color).frame(width: 3) }
+        .background { if !item.isBusy { OpenStripes(color: item.color) } }
+        .overlay(alignment: .leading) {
+            // Open items (just for info) get a dotted edge and stripes, so closed ones read as "taken".
+            if item.isBusy { Rectangle().fill(item.color).frame(width: 3) }
+            else { Rectangle().stroke(item.color, style: StrokeStyle(lineWidth: 3, dash: [2, 2])).frame(width: 1.5) }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
         .contentShape(Rectangle())
         // Double-click inside a block adds a task at that exact time; single click shows details.
@@ -254,7 +262,7 @@ struct TimedBlock: View {
                 .onEnded { v in if let m = moment(atY: v.location.y) { model.newTask(at: m) } }
                 .exclusively(before: TapGesture().onEnded { showing = true })
         )
-        .help("Click for details · double-click to add a task at this time")
+        .help("\(item.isBusy ? "Closed" : "Open (just for info)") · click for details · double-click to add a task at this time")
         .contextMenu { AddDuringMenu(item: item) }
         .popover(isPresented: $showing, arrowEdge: .trailing) { ItemDetail(item: item) { showing = false } }
     }

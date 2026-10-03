@@ -252,6 +252,7 @@ final class CalendarImporter: ObservableObject {
                          reminderOffsets: [0], channels: [], color: .blue)
         t.source = "google"; t.googleEventID = raw; t.externalURL = ev.link?.absoluteString
         t.sourceCalendar = ev.calendarID
+        t.busy = !ev.transparent
         return t
     }
 }

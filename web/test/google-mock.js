@@ -10,6 +10,7 @@ const events = [
   { id: 'mockevt1', status: 'confirmed', summary: 'Dentist (from Google)', start: { dateTime: at(0, 15) }, end: { dateTime: at(0, 16) }, location: 'Main St', htmlLink: 'https://calendar.google.com/x1' },
   { id: 'mockevt2', status: 'confirmed', summary: 'Team sync (from Google)', start: { dateTime: at(1, 10, 30) }, end: { dateTime: at(1, 11) }, htmlLink: 'https://calendar.google.com/x2' },
   { id: 'mockevt3', status: 'confirmed', summary: 'Field trip (from Google)', start: { date: ymd(day(2)) }, end: { date: ymd(day(3)) } },
+  { id: 'mockfree', status: 'confirmed', summary: 'Gym (from Google, free)', transparency: 'transparent', start: { dateTime: at(1, 7) }, end: { dateTime: at(1, 8) } },
   { id: 'mockgone', status: 'cancelled' },
 ];
 let nextId = 1;
@@ -20,14 +21,14 @@ createServer(async (req, res) => {
   if (req.method === 'POST' || req.method === 'PATCH') { let raw = ''; for await (const c of req) raw += c; try { body = JSON.parse(raw || '{}'); } catch {} }
   // Writes (create / edit / delete), so Cadence → Google sync can be tested too.
   if (req.method === 'POST' && /\/calendars\/[^/]+\/events$/.test(url.pathname)) {
-    const e = { id: `created${nextId++}`, status: 'confirmed', summary: body.summary, description: body.description, start: body.start, end: body.end, htmlLink: 'https://calendar.google.com/new' };
+    const e = { id: `created${nextId++}`, status: 'confirmed', summary: body.summary, description: body.description, transparency: body.transparency, start: body.start, end: body.end, htmlLink: 'https://calendar.google.com/new' };
     if (body.recurrence) e.recurrence = body.recurrence;
     events.push(e); console.log('CREATE', e.id, e.summary); return send(e);
   }
   const target = url.pathname.match(/\/calendars\/[^/]+\/events\/([^/]+)$/);
   if (target && req.method === 'PATCH') {
     const e = events.find(x => x.id === target[1]); if (!e) { res.writeHead(404); return res.end('{}'); }
-    for (const k of ['summary', 'description']) if (k in body) e[k] = body[k];
+    for (const k of ['summary', 'description', 'transparency']) if (k in body) e[k] = body[k];
     if (body.start) e.start = Object.fromEntries(Object.entries(body.start).filter(([, v]) => v != null));
     if (body.end) e.end = Object.fromEntries(Object.entries(body.end).filter(([, v]) => v != null));
     console.log('PATCH', e.id, e.summary); return send(e);
@@ -43,6 +44,12 @@ createServer(async (req, res) => {
   }
   const one = url.pathname.match(/\/calendars\/[^/]+\/events\/([^/]+)$/);
   if (one) { const e = events.find(x => x.id === one[1]); if (e) return send(e); res.writeHead(404); return res.end('{}'); }
-  if (url.pathname.endsWith('/freeBusy')) return send({ calendars: { primary: { busy: [{ start: at(0, 15), end: at(0, 16) }] } } });
+  if (url.pathname.endsWith('/freeBusy')) {
+    // Like Google: every confirmed event not marked "free"; all-day ones block the whole day.
+    const busy = events.filter(e => e.status !== 'cancelled' && e.start && e.transparency !== 'transparent').map(e => e.start.dateTime
+      ? { start: e.start.dateTime, end: e.end.dateTime }
+      : { start: new Date(`${e.start.date}T00:00:00`).toISOString(), end: new Date(`${e.end.date}T00:00:00`).toISOString() });
+    return send({ calendars: { primary: { busy } } });
+  }
   res.writeHead(404); res.end('{}');
 }).listen(8140, () => console.log('google mock on 8140'));

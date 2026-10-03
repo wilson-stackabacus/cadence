@@ -26,7 +26,7 @@ const ui = {
   selectedDay: M.startOfDay(new Date()),
   todo: { mode: 'checklist', range: 7, showCompleted: true, search: '' },
   reflSearch: '',
-  booking: { meetingId: null, busy: [], loading: false, message: null, loadedFor: null },
+  booking: { busy: [], loading: false, message: null, loadedFor: null, week: [] },
   modal: null,
   auth: { mode: 'login', error: null, busy: false },
   flash: null,
@@ -127,7 +127,8 @@ function sidebar() {
     <div class="brand"><img src="/icon-192.png" alt=""><span>Cadence</span></div>
     ${items}
     <div class="spacer"></div>
-    <button class="btn primary" data-act="new-task" title="New task (N)">${ic('plus')} New Task</button>
+    <div class="new-btns"><button class="btn primary" data-act="new-task" title="New task (N)">${ic('plus')} New Task</button>
+      <button class="btn" data-act="new-event" title="New event (E)">${ic('cal')} New Event</button></div>
     <div class="account">
       <div class="row"><b class="grow ellipsis">${esc(store.user.username)}</b>
         <button class="btn ghost sm icon" data-act="sign-out" title="Sign out">${ic('logout')}</button></div>
@@ -253,7 +254,7 @@ function homeView() {
       ${tile('month', 'month', 'Month', M.fmtDay(now, { month: 'short' }), 'see the whole month', '#30b0c7')}
       ${tile('todo', 'list', 'To-Do List', store.tasks.size ? [...store.tasks.values()].filter(t => !t.archived).length : 0, overdue ? `${overdue} overdue` : 'all your tasks', '#ff9f0a')}
       ${tile('reflections', 'quote', 'Reflections', store.reflections.size, store.reflectionStreak ? `${store.reflectionStreak}-day streak` : 'your record', '#5e5ce6')}
-      ${tile('booking', 'people', 'Booking', store.calendly.connected ? store.calendly.eventTypes.length : '—', store.calendly.connected ? 'Calendly links' : 'share open times', '#bf5af2')}
+      ${tile('booking', 'people', 'Open time', durLabel(openTimeDays().reduce((n, d) => n + d.total, 0)), 'free in the next 7 days', '#30d158')}
       ${tile('settings', 'gear', 'Settings', ss.status === 'synced' ? 'Synced' : ss.status === 'offline' ? 'Offline' : '—', store.google.connected ? 'Google connected' : 'reminders & sync', '#8e8e93')}
     </div>
   </div>`;
@@ -263,9 +264,9 @@ function homeView() {
 function scheduleOn(day) {
   const list = [
     ...store.eventsOn(day).map(o => ({ id: `t|${o.id}`, title: o.task.title, start: o.start, end: o.end, allDay: !o.start,
-      color: color(o.task.color), source: o.task.source, link: o.task.externalURL, notes: o.task.notes, silent: M.isSilent(o.task) })),
+      color: color(o.task.color), source: o.task.source, link: o.task.externalURL, notes: o.task.notes, silent: M.isSilent(o.task), busy: o.busy })),
     ...store.googleEventsOn(day).map(e => ({ id: `g|${e.id}`, title: e.title, start: e.isAllDay ? null : e.startDate, end: e.isAllDay ? null : e.endDate,
-      allDay: e.isAllDay, color: e.colorHex || '#0a84ff', source: 'google', link: e.link, notes: e.location })),
+      allDay: e.isAllDay, color: e.colorHex || '#0a84ff', source: 'google', link: e.link, notes: e.location, busy: !e.transparent })),
   ];
   return list.sort((a, b) => (a.allDay === b.allDay ? (a.start || 0) - (b.start || 0) : a.allDay ? -1 : 1));
 }
@@ -274,8 +275,8 @@ function eventRow(ev) {
   const src = ev.source === 'calendly' ? `<span>${ic('people')}Calendly</span>` : ev.source === 'google' ? `<span>${ic('cal')}Google</span>` : '';
   return `<div class="crow erow" data-act="detail" data-item="${esc(ev.id)}">
     <span class="evt-time">${ev.allDay ? 'All day' : `${M.fmtTime(ev.start)}<small>${M.fmtTime(ev.end)}</small>`}</span>
-    <span class="bar" style="background:${ev.color}"></span>
-    <div class="grow"><div class="title ellipsis">${esc(ev.title)}</div><div class="meta">${src}${ev.notes ? `<span class="ellipsis">${esc(ev.notes)}</span>` : ''}${ev.silent === false ? `<span title="Reminds you">${ic('bell')}</span>` : ''}</div></div>
+    <span class="bar ${ev.busy === false ? 'free' : ''}" style="--hue:${ev.color};background:${ev.color}"></span>
+    <div class="grow"><div class="title ellipsis">${esc(ev.title)}</div><div class="meta">${src}${ev.busy === false ? `<span title="Open: just for info">${ic('eye')}Open</span>` : ''}${ev.notes ? `<span class="ellipsis">${esc(ev.notes)}</span>` : ''}${ev.silent === false ? `<span title="Reminds you">${ic('bell')}</span>` : ''}</div></div>
     ${ev.link ? `<a href="${esc(ev.link)}" target="_blank" rel="noopener" title="Open">${ic('link')}</a>` : ''}
   </div>`;
 }
@@ -353,7 +354,7 @@ function weekView() {
   const now = new Date();
   return `<div class="week">
     <div class="header"><div class="grow"><h1>${title}</h1><div class="sub">Double-click an empty slot — or inside an existing block — to add a task at that time.</div></div>
-      <div class="row"><button class="btn icon" data-act="week-prev" title="Previous week">${ic('left')}</button>
+      <div class="row"><button class="btn" data-act="new-event">${ic('cal')} New event</button><button class="btn icon" data-act="week-prev" title="Previous week">${ic('left')}</button>
       <button class="btn" data-act="week-today">Today</button><button class="btn icon" data-act="week-next" title="Next week">${ic('right')}</button></div></div>
     <div class="week-head"><div></div>${days.map(d => {
       const open = store.tasksOn(d).filter(o => !o.done).length;
@@ -370,8 +371,8 @@ function weekView() {
           const dayStart = M.startOfDay(d);
           const top = Math.max(0, (p.start - dayStart) / 3_600_000) * HOUR;
           const bottom = Math.min(24, (p.end - dayStart) / 3_600_000) * HOUR;
-          return `<div class="block ${p.done ? 'done' : ''} ${p.kind !== 'task' ? 'evt' : ''}" data-item="${esc(p.id)}" data-start="${+p.start}" data-end="${+p.end}"
-            title="Click for details · double-click to add a task at this time"
+          return `<div class="block ${p.done ? 'done' : ''} ${p.kind !== 'task' ? 'evt' : ''} ${busyOf(p) ? '' : 'free'}" data-item="${esc(p.id)}" data-start="${+p.start}" data-end="${+p.end}"
+            title="${busyOf(p) ? 'Closed' : 'Open (just for info)'} · click for details · double-click to add a task at this time"
             style="top:${top}px;height:${Math.max(20, bottom - top - 1)}px;left:calc(${(p.lane * 100) / p.lanes}% + 2px);width:calc(${100 / p.lanes}% - 4px);
             background:${tint(p.color, p.done ? .1 : p.kind !== 'task' ? .14 : .24)};border-color:${p.color}">
             <b>${p.kind !== 'task' ? `${ic('cal')} ` : ''}${esc(p.title)}</b>${M.fmtTime(p.start)}</div>`;
@@ -514,70 +515,114 @@ function reflectionsView() {
     </div>`;
 }
 
-// ---------- Booking ----------
-function meeting() {
-  const types = store.settings.meetingTypes;
-  return types.find(m => m.id === ui.booking.meetingId) || types[0] || { name: 'Meeting', minutes: 30, details: '' };
-}
+// ---------- Booking: your open time over the next 7 days ----------
+const OT_HOUR = 40;
+const durLabel = ms => { const m = Math.round(ms / 60_000), h = Math.floor(m / 60); return h ? (m % 60 ? `${h}h ${m % 60}m` : `${h}h`) : `${m}m`; };
+const busyOf = it => it.kind === 'google' ? !it.e.transparent : it.o.busy;
 
-function computeSlots() {
-  const a = store.settings.availability, mt = meeting();
-  const dur = mt.minutes, step = Math.min(dur, 30);
-  const earliest = Date.now() + a.minNoticeHours * 3_600_000, buf = a.bufferMinutes * 60_000;
-  const out = [];
-  for (let i = 0; i < a.daysAhead; i++) {
-    const day = M.addDays(M.startOfDay(new Date()), i);
-    if (!a.weekdays.includes(M.weekday(day))) continue;
-    const blocked = ui.booking.busy.map(b => [+new Date(b.start), +new Date(b.end)]);
-    for (const o of store.occurrencesOn(day)) if (o.start) blocked.push([+o.start, +o.end]);
-    const slots = [];
-    for (let m = a.startMinutes; m + dur <= a.endMinutes; m += step) {
-      const s = +M.dayAt(day, m), e = s + dur * 60_000;
-      if (s >= earliest && !blocked.some(([bs, be]) => bs < e + buf && be > s - buf)) slots.push({ start: new Date(s), end: new Date(e) });
+/** Each of the next 7 days: its items (closed or open), Google-only busy times, and the open time left. */
+function openTimeDays() {
+  const a = store.settings.availability, today = M.startOfDay(new Date());
+  const days = [...Array(7)].map((_, i) => M.addDays(today, i));
+  store.ensureGoogle(days[0], M.addDays(days[6], 1));
+  const fb = ui.booking.busy.map(b => [+new Date(b.start), +new Date(b.end)]);
+  return days.map(day => {
+    const from = +day, to = +M.addDays(day, 1);
+    const timed = calItemsTimed(day).map(p => ({ ...p, busy: busyOf(p) }));
+    const allDay = allDayItems(day).map(it => ({ ...it, busy: busyOf(it) }));
+    const blocked = timed.filter(p => p.busy).map(p => [+p.start, +p.end]);
+    if (allDay.some(it => it.busy)) blocked.push([from, to]);
+    // Google's free/busy also covers calendars and events Cadence doesn't show. Skip anything you've
+    // marked open here (Google catches up a moment later) and anything already drawn.
+    const openHere = new Set(timed.filter(p => !p.busy).map(p => `${+p.start}|${+p.end}`));
+    const extra = [];
+    for (const [bs, be] of fb) {
+      const s = Math.max(bs, from), e = Math.min(be, to);
+      if (e <= s || openHere.has(`${bs}|${be}`) || blocked.some(([x, y]) => x <= s && y >= e)) continue;
+      extra.push([s, e]);
     }
-    if (slots.length) out.push([day, slots]);
-  }
-  return out;
+    blocked.push(...extra);
+    const open = M.openRanges(day, a, blocked);
+    return { day, timed, allDay, extra, open, total: open.reduce((n, [s, e]) => n + e - s, 0) };
+  });
 }
 
 async function loadBusy() {
   const b = ui.booking;
   if (!store.google.connected) { b.busy = []; return; }
   b.loading = true; render();
-  try { b.busy = await store.freeBusy(new Date(), M.addDays(M.startOfDay(new Date()), store.settings.availability.daysAhead + 1)); }
+  try { b.busy = await store.freeBusy(new Date(), M.addDays(M.startOfDay(new Date()), 8)); }
   catch (e) { b.message = e.message; }
   b.loading = false; b.loadedFor = Date.now(); render();
 }
 
 function bookingView() {
-  const b = ui.booking, mt = meeting(), a = store.settings.availability;
+  const b = ui.booking, a = store.settings.availability;
   if (store.google.connected && (!b.loadedFor || Date.now() - b.loadedFor > 120_000) && !b.loading) setTimeout(loadBusy);
-  const slots = computeSlots();
-  ui.booking.slots = slots;
-  return `<div class="header"><div class="grow"><h1>Booking</h1><div class="sub">Share open times and book meetings straight into Google Calendar.</div></div>
-      <button class="btn" data-act="busy-refresh" ${b.loading ? 'disabled' : ''}>${ic('refresh')} Refresh</button>
-      <button class="btn" data-act="copy-avail" ${slots.length ? '' : 'disabled'}>${ic('copy')} Copy availability</button></div>
-    <div class="page stack" style="max-width:1100px">
+  const week = openTimeDays();
+  ui.booking.week = week;
+  const total = week.reduce((n, d) => n + d.total, 0);
+  // Hours shown: your open hours, stretched to fit anything scheduled outside them.
+  let lo = a.startMinutes, hi = a.endMinutes;
+  for (const d of week) for (const p of d.timed) {
+    lo = Math.min(lo, M.minutesOf(p.start));
+    hi = Math.max(hi, M.sameDay(p.end, d.day) ? M.minutesOf(p.end) : 1440);
+  }
+  const h0 = Math.floor(lo / 60), h1 = Math.max(h0 + 1, Math.ceil(hi / 60));
+  const y = (day, t) => ((t - +day) / 3_600_000 - h0) * OT_HOUR;
+  const clip = (day, s, e) => { const top = Math.max(0, y(day, s)), bot = Math.min((h1 - h0) * OT_HOUR, y(day, e)); return bot > top ? `top:${top}px;height:${Math.max(16, bot - top - 1)}px` : null; };
+  const now = Date.now();
+  const col = d => {
+    const off = !a.weekdays.includes(M.weekday(d.day));
+    const parts = [];
+    if (off) parts.push(`<div class="ot-off" style="top:0;bottom:0"></div>`);
+    else {
+      const s = clip(d.day, +M.dayAt(d.day, h0 * 60), +M.dayAt(d.day, a.startMinutes)), e = clip(d.day, +M.dayAt(d.day, a.endMinutes), +M.addDays(d.day, 1));
+      if (s) parts.push(`<div class="ot-off" style="${s}"></div>`);
+      if (e) parts.push(`<div class="ot-off" style="${e}"></div>`);
+    }
+    if (M.isToday(d.day)) { const p = clip(d.day, +M.dayAt(d.day, h0 * 60), now); if (p) parts.push(`<div class="ot-past" style="${p}"></div>`); }
+    for (const [s, e] of d.open) {
+      const pos = clip(d.day, s, e);
+      if (pos) parts.push(`<button class="ot-open" data-act="ot-book" data-s="${s}" data-e="${e}" style="${pos}" title="Open ${M.fmtTime(s)}–${M.fmtTime(e)} · click to book a time in it">
+        <b>${M.fmtTime(s)}–${M.fmtTime(e)}</b><span>${durLabel(e - s)} open</span></button>`);
+    }
+    for (const [s, e] of d.extra) { const pos = clip(d.day, s, e); if (pos) parts.push(`<div class="ot-item closed gbusy" style="${pos};left:2px;right:2px" title="Busy in Google Calendar">Busy</div>`); }
+    for (const p of d.timed) {
+      const pos = clip(d.day, +p.start, +p.end);
+      if (pos) parts.push(`<div class="ot-item ${p.busy ? 'closed' : 'open'}" data-act="detail" data-item="${esc(p.id)}" title="${esc(p.title)} · ${p.busy ? 'closed: blocks this time' : 'open: just for info'}"
+        style="${pos};left:calc(${(p.lane * 100) / p.lanes}% + 2px);width:calc(${100 / p.lanes}% - 4px);--hue:${p.color}"><b>${esc(p.title)}</b>${M.fmtTime(p.start)}</div>`);
+    }
+    if (M.isToday(d.day)) { const t = y(d.day, now); if (t > 0 && t < (h1 - h0) * OT_HOUR) parts.push(`<div class="nowline" style="top:${t}px"></div>`); }
+    return `<div class="ot-col ${M.isToday(d.day) ? 'today' : ''}" style="height:${(h1 - h0) * OT_HOUR}px">${parts.join('')}</div>`;
+  };
+  return `<div class="header"><div class="grow"><h1>Booking</h1><div class="sub">Your open time for the next 7 days. Click any green stretch to book it.</div></div>
+      <button class="btn" data-act="busy-refresh" ${b.loading ? 'disabled' : ''}>${ic('refresh', b.loading ? 'spinning' : '')} Refresh</button>
+      <button class="btn" data-act="copy-avail" ${total ? '' : 'disabled'}>${ic('copy')} Copy open times</button></div>
+    <div class="page stack" style="max-width:1200px">
       ${!store.google.connected ? `<div class="callout warn"><span class="big">${ic('cal')}</span><div class="grow"><b>Google Calendar isn’t connected</b>
-        <div class="small muted">Slots only account for your Cadence tasks, and bookings are saved as Cadence tasks without sending invites.</div></div>
+        <div class="small muted">Open time only accounts for what’s in Cadence, and bookings are saved as Cadence events without sending invites.</div></div>
         <a class="btn" href="/app/settings">Connect in Settings</a></div>` : ''}
       ${b.message ? `<div class="callout" style="background:${tint('#30d158', .12)}"><span class="big green">${ic('check')}</span><div class="grow">${esc(b.message)}</div></div>` : ''}
+      <div class="ot-summary"><div><span class="ot-big">${durLabel(total)}</span> open this week</div><span class="grow"></span>
+        <span class="small muted">Open hours: ${a.weekdays.map(w => M.WEEKDAY_SHORT[w - 1]).join(' ')} · ${M.fmtTimeMinutes(a.startMinutes)}–${M.fmtTimeMinutes(a.endMinutes)}</span>
+        <a class="btn sm" href="/app/settings#open-hours">Edit hours</a></div>
+      <div class="ot-legend"><span><i class="sw open-time"></i>Open time</span><span><i class="sw closed"></i>Closed — blocks time</span>
+        <span><i class="sw open"></i>Open — just for info</span><span><i class="sw off"></i>Outside your open hours</span></div>
+      <div class="ot-wrap"><div class="ot">
+        <div></div>${week.map(d => `<div class="ot-head ${M.isToday(d.day) ? 'today' : ''}"><div class="dow">${M.isToday(d.day) ? 'TODAY' : M.WEEKDAY_SHORT[d.day.getDay()].toUpperCase()}</div>
+          <div class="num">${d.day.getDate()}</div><div class="small ${d.total ? 'green' : 'muted'}">${d.total ? `${durLabel(d.total)} open` : 'no open time'}</div></div>`).join('')}
+        <div class="ot-lab">all<br>day</div>${week.map(d => `<div class="ot-allday">${d.allDay.map(it => `<div class="ot-chip ${it.busy ? 'closed' : 'open'}" style="--hue:${it.color}" data-act="detail" data-item="${esc(it.id)}" title="${it.busy ? 'Closed: blocks the whole day' : 'Open: just for info'}">${esc(it.title)}</div>`).join('')}</div>`).join('')}
+        <div class="ot-hours">${[...Array(h1 - h0)].map((_, i) => `<div style="height:${OT_HOUR}px">${M.fmtTimeMinutes((h0 + i) * 60)}</div>`).join('')}</div>
+        ${week.map(col).join('')}
+      </div></div>
       ${store.calendly.connected && store.calendly.eventTypes.length ? `<div><div class="section-title">${ic('link')}Your Calendly links</div>
-        <div class="small muted" style="margin:-4px 0 8px">Public links anyone can book from. Booked meetings land on your checklist automatically.</div>
+        <div class="small muted" style="margin:-4px 0 8px">Public links anyone can book from. Booked meetings land on your calendar automatically.</div>
         <div class="card">${store.calendly.eventTypes.map(t => `<div class="crow"><span style="width:10px;height:10px;border-radius:50%;background:${esc(t.color || '#bf5af2')}"></span>
           <div class="grow"><div class="title">${esc(t.name)}</div><div class="meta"><span>${t.minutes} min</span><span class="ellipsis">${esc(t.url)}</span></div></div>
           <button class="btn sm" data-act="copy-text" data-text="${esc(t.url)}">${ic('copy')} Copy link</button>
           <a class="btn sm icon" href="${esc(t.url)}" target="_blank" rel="noopener" title="Open">${ic('link')}</a></div>`).join('')}</div></div>` : ''}
-      <div><div class="section-title">${ic('people')}Meeting type</div><div class="mtypes">${store.settings.meetingTypes.map(m => `
-        <button class="mtype ${m.id === mt.id ? 'on' : ''}" data-act="pick-meeting" data-id="${m.id}"><b>${esc(m.name)}</b>
-        <div class="small muted">${ic('clock')} ${m.minutes} min</div><div class="small muted">${esc(m.details)}</div></button>`).join('')}</div></div>
-      <div><div class="section-title">${ic('cal')}Open slots ${b.loading ? '<span class="small muted">loading…</span>' : ''}<span class="grow"></span>
-        <span class="small muted" style="font-weight:400">${a.weekdays.map(w => M.WEEKDAY_SHORT[w - 1]).join(' ')} · ${M.fmtTimeMinutes(a.startMinutes)}–${M.fmtTimeMinutes(a.endMinutes)}</span>
-        <a class="btn sm" href="/app/settings">Edit hours</a></div>
-        ${slots.length ? `<div class="slots">${slots.map(([d, ss], di) => `<div class="slotcol"><div class="hd"><div class="small muted">${M.WEEKDAY_SHORT[d.getDay()]}</div>
-          <b>${M.fmtDay(d, { month: 'short', day: 'numeric' })}</b></div>${ss.map((s, si) => `<button class="btn slot" data-act="book" data-d="${di}" data-s="${si}">${M.fmtTime(s.start)}</button>`).join('')}</div>`).join('')}</div>`
-          : `<div class="muted" style="padding:20px 0">No open slots in the next ${a.daysAhead} days with your current availability.</div>`}</div>
-      <div class="small muted">A public booking link would need people to reach your calendar without signing in; for that, Google Calendar’s Appointment Schedules works alongside this. Here, use “Copy availability” to paste your open times into an email, then book the slot the other person picks.</div>
+      <div class="small muted">Closed items take their time out of your open time; open ones are just for info. Events you make in Cadence start out closed and tasks start out open — change it in any item’s editor. “Copy open times” puts the list on your clipboard to paste into an email.</div>
     </div>`;
 }
 
@@ -672,26 +717,16 @@ function settingsView() {
         <button class="btn ${ui.importing ? 'busy' : ''}" data-act="import-now" ${ui.importing || !(store.google.connected || store.calendly.connected) ? 'disabled' : ''}>${ic('sync', ui.importing ? 'spinning' : '')} ${ui.importing ? 'Importing…' : 'Import now'}</button></div>
     </div></div>
 
-    <div><h3>Booking availability</h3><div class="card">
+    <div id="open-hours"><h3>Open hours</h3><div class="card">
+      <div class="srow small muted">When you’re normally free to be booked. Booking shows what’s left of these hours after your closed tasks and events.</div>
       <div class="srow"><span>Days</span><div class="wd">${[1, 2, 3, 4, 5, 6, 7].map(w => `<button class="${a.weekdays.includes(w) ? 'on' : ''}" data-act="avail-day" data-w="${w}" title="${M.WEEKDAY_SHORT[w - 1]}">${M.WEEKDAY_LETTER[w - 1]}</button>`).join('')}</div></div>
       <div class="srow"><span>From</span>${sel('availability.startMinutes', times(360, 1200), a.startMinutes)}</div>
       <div class="srow"><span>Until</span>${sel('availability.endMinutes', times(480, 1380), a.endMinutes)}</div>
-      <div class="srow"><span>Buffer around meetings</span>${sel('availability.bufferMinutes', [[0, 'None'], [5, '5 minutes'], [10, '10 minutes'], [15, '15 minutes'], [30, '30 minutes']], a.bufferMinutes)}</div>
-      <div class="srow"><span>Minimum notice</span>${sel('availability.minNoticeHours', [[0, 'None'], ...[1, 2, 4, 12, 24, 48].map(n => [n, `${n} hours`])], a.minNoticeHours)}</div>
-      <div class="srow"><span>Look ahead</span>${sel('availability.daysAhead', [7, 14, 21, 30, 45, 60].map(n => [n, `${n} days`]), a.daysAhead)}</div>
+      <div class="srow"><span>Breathing room around closed items</span>${sel('availability.bufferMinutes', [[0, 'None'], [5, '5 minutes'], [10, '10 minutes'], [15, '15 minutes'], [30, '30 minutes']], a.bufferMinutes)}</div>
     </div></div>
 
     <div class="small muted" style="order:99">Read our <a href="/privacy" target="_blank">Privacy Policy</a> and <a href="/terms" target="_blank">Terms of Service</a>.</div>
 
-    <div><h3>Meeting types</h3><div class="card">
-      ${s.meetingTypes.map((m, i) => `<div class="srow" style="flex-wrap:wrap">
-        <input class="input" style="max-width:170px" value="${esc(m.name)}" data-meeting="${i}" data-field="name" placeholder="Name">
-        <select class="input" style="width:auto" data-meeting="${i}" data-field="minutes">${[15, 20, 30, 45, 60, 90].map(n => `<option value="${n}" ${m.minutes === n ? 'selected' : ''}>${n} min</option>`).join('')}</select>
-        <input class="input grow" value="${esc(m.details)}" data-meeting="${i}" data-field="details" placeholder="Description">
-        <label class="check" title="Add a Google Meet link"><input type="checkbox" data-meeting="${i}" data-field="addMeetLink" ${m.addMeetLink ? 'checked' : ''}>Meet</label>
-        <button class="btn ghost sm icon danger" data-act="meeting-remove" data-i="${i}" ${s.meetingTypes.length <= 1 ? 'disabled' : ''}>${ic('trash')}</button></div>`).join('')}
-      <div class="srow"><button class="btn" data-act="meeting-add">${ic('plus')} Add meeting type</button></div>
-    </div></div>
   </div>`;
 }
 
@@ -825,7 +860,7 @@ function detailDialog(m) {
       <div class="muted">${ic('clock')} ${o.start ? `${M.fmtTime(o.start)} – ${M.fmtTime(o.end)}` : 'All day'}</div>
       ${t.recurrence.frequency !== 'none' ? `<div class="muted">${ic('repeat')} ${esc(M.recurrenceSummary(t.recurrence, t.startDate))}</div>` : ''}
       ${t.notes ? `<div>${esc(t.notes)}</div>` : ''}
-      <div class="small muted">${from} · ${M.isSilent(t) ? 'no reminders' : 'reminds you'} · not on your checklist</div>`;
+      <div class="small muted">${from} · ${M.isBusy(t) ? 'closed: blocks this time' : 'open: just for info'} · ${M.isSilent(t) ? 'no reminders' : 'reminds you'} · not on your checklist</div>`;
     buttons = `${t.externalURL ? `<a class="btn" href="${esc(t.externalURL)}" target="_blank" rel="noopener">${ic('link')} Open</a>` : ''}
       <button class="btn" data-act="edit" data-task="${t.id}">Edit…</button>
       <button class="btn" data-act="make-kind" data-task="${t.id}" data-kind="task" title="Put it on your checklist">${ic('list')} Make it a task</button>
@@ -835,7 +870,7 @@ function detailDialog(m) {
     body = `<div class="muted">${ic('cal')} ${M.fmtDay(o.day)}</div>
       <div class="muted">${ic('clock')} ${o.start ? `${M.fmtTime(o.start)} – ${M.fmtTime(o.end)}` : 'Any time'}</div>
       ${t.recurrence.frequency !== 'none' ? `<div class="muted">${ic('repeat')} ${esc(M.recurrenceSummary(t.recurrence, t.startDate))}</div>` : ''}
-      ${t.notes ? `<div>${esc(t.notes)}</div>` : ''}${r ? `<div class="muted" style="font-style:italic">“${esc(r.text)}”</div>` : ''}`;
+      ${t.notes ? `<div>${esc(t.notes)}</div>` : ''}<div class="small muted">${M.isBusy(t) ? 'Closed: blocks this time' : 'Open: just for info, you’re still free then'}</div>${r ? `<div class="muted" style="font-style:italic">“${esc(r.text)}”</div>` : ''}`;
     buttons = `${o.done ? `<button class="btn" data-act="toggle" data-occ="${esc(o.id)}">Mark not done</button>` : `<button class="btn primary" data-act="toggle" data-occ="${esc(o.id)}">Complete…</button>`}
       <button class="btn" data-act="edit" data-task="${t.id}">Edit…</button>
       ${t.recurrence.frequency !== 'none' ? `<button class="btn" data-act="skip" data-occ="${esc(o.id)}">Skip</button>` : ''}
@@ -843,7 +878,7 @@ function detailDialog(m) {
   } else {
     const e = it.e;
     body = `<div class="muted">${ic('cal')} ${M.fmtDay(e.startDate)}</div>${!e.isAllDay ? `<div class="muted">${ic('clock')} ${M.fmtTime(e.startDate)} – ${M.fmtTime(e.endDate)}</div>` : ''}
-      ${e.location ? `<div class="muted">${esc(e.location)}</div>` : ''}<div class="small muted">From Google Calendar</div>`;
+      ${e.location ? `<div class="muted">${esc(e.location)}</div>` : ''}<div class="small muted">From Google Calendar · ${e.transparent ? 'shown as free (open)' : 'busy (closed)'}</div>`;
     buttons = e.link ? `<a class="btn" href="${esc(e.link)}" target="_blank" rel="noopener">${ic('link')} Open in Google Calendar</a>` : '';
   }
   return `<div class="dialog sm"><div class="body"><div class="row"><span style="width:10px;height:10px;border-radius:50%;background:${it.color}"></span><h2 class="grow">${esc(it.title)}</h2></div>
@@ -899,6 +934,10 @@ function editorDialog(m) {
       ${m.hasTime ? `<div class="grid2"><label class="field"><span>Time</span><input class="input" type="time" data-edit="time" data-rerender value="${m.time}"></label>
         <label class="field"><span>Duration</span><select class="input" data-edit="duration" data-rerender>${DURATIONS.map(n => `<option value="${n}" ${d.durationMinutes === n ? 'selected' : ''}>${n < 60 ? `${n} min` : n % 60 ? `${Math.floor(n / 60)} hr ${n % 60} min` : `${n / 60} hr`}</option>`).join('')}</select></label></div>` : ''}
     </div>
+    <div class="fieldset"><div class="legend">Your time</div>
+      <div class="seg wide"><button type="button" class="${M.isBusy(d) ? 'on' : ''}" data-act="edit-busy" data-busy="1">${ic('lock')} Closed</button>
+        <button type="button" class="${M.isBusy(d) ? '' : 'on'}" data-act="edit-busy" data-busy="0">${ic('eye')} Open</button></div>
+      <div class="small muted">${M.isBusy(d) ? `Blocks this time: it’s taken out of your open time on Booking${d.source === 'google' || m.syncGoogle ? ', and shows as busy in Google Calendar' : ''}.` : 'Just for info: it shows on your calendars, but you’re still free to be booked then.'}</div></div>
     ${overlaps.length ? `<div class="fieldset"><div class="legend">${ic('layers')} Overlaps with</div>${overlaps.map(l => `<div class="small">${esc(l)}</div>`).join('')}
       <div class="small muted">That’s fine: this task’s reminders will still fire on time, even in the middle of the other one.</div></div>` : ''}
     ${d.source === 'google' && !m.isNew ? `<div class="fieldset"><div class="legend">${ic('sync')} Synced with Google Calendar</div>
@@ -934,7 +973,7 @@ function editorDialog(m) {
       : `<label class="check"><input type="checkbox" data-edit="addToGoogle" ${m.addToGoogle ? 'checked' : ''}>Also add to Google Calendar${r.frequency !== 'none' ? ' (with the repeat schedule)' : ''}</label>`}
     ${m.error ? `<div class="error">${esc(m.error)}</div>` : ''}
     </div><div class="foot">${!m.isNew ? `<button type="button" class="btn danger" data-act="delete-task" data-task="${d.id}">Delete</button>` : ''}<span class="grow"></span>
-      <button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" ${m.saving ? 'disabled' : ''}>${m.isNew ? 'Add Task' : 'Save'}</button></div></form>`;
+      <button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" ${m.saving ? 'disabled' : ''}>${m.isNew ? (M.isEvent(d) ? 'Add Event' : 'Add Task') : 'Save'}</button></div></form>`;
 }
 
 function readEditorInputs() {
@@ -981,7 +1020,7 @@ async function saveEditor() {
   const day0 = M.parseKey(m.date);
   const start0 = t.timeMinutes != null ? M.dayAt(day0, t.timeMinutes) : day0;
   const googleFields = {
-    title: t.title, details: t.notes, allDay: t.timeMinutes == null,
+    title: t.title, details: t.notes, allDay: t.timeMinutes == null, busy: M.isBusy(t),
     start: M.iso(start0), end: M.iso(M.addMinutes(start0, t.durationMinutes)),
     startDate: M.dateKey(day0), endDate: M.dateKey(M.addDays(day0, 1)),
   };
@@ -1024,7 +1063,7 @@ async function saveEditor() {
     const day = M.parseKey(m.date);
     const start = t.timeMinutes != null ? M.dayAt(day, t.timeMinutes) : day;
     const ev = await store.createGoogleEvent({
-      title: t.title, details: t.notes, allDay: t.timeMinutes == null,
+      title: t.title, details: t.notes, allDay: t.timeMinutes == null, busy: M.isBusy(t),
       start: M.iso(start), end: M.iso(M.addMinutes(start, t.durationMinutes)),
       startDate: M.dateKey(day), endDate: M.dateKey(M.addDays(day, 1)),
       rrule: M.rrule(t.recurrence, day),
@@ -1037,17 +1076,22 @@ async function saveEditor() {
   }
 }
 
-// --- booking dialog ---
+// --- booking dialog (book a time inside an open stretch) ---
+const BOOK_MINUTES = [15, 30, 45, 60, 90, 120];
 function bookingDialog(m) {
-  const mt = meeting();
+  const g = store.google.connected;
+  const t = `${String(m.start.getHours()).padStart(2, '0')}:${String(m.start.getMinutes()).padStart(2, '0')}`;
   return `<form class="dialog sm" data-form="booking"><div class="body">
-    <h2>Book ${esc(mt.name)}</h2><div class="muted">${M.fmtDay(m.slot.start)} · ${M.fmtTime(m.slot.start)}–${M.fmtTime(m.slot.end)}</div>
-    <label class="field"><span>Invitee name</span><input class="input" name="name" required autofocus></label>
-    <label class="field"><span>Invitee email</span><input class="input" name="email" type="email" ${store.google.connected ? 'required' : ''}></label>
-    <label class="field"><span>Event title</span><input class="input" name="title" placeholder="${esc(mt.name)} with …"></label>
+    <h2>Book open time</h2><div class="muted">${M.fmtDay(m.start)} · open ${M.fmtTime(m.start)}–${M.fmtTime(m.rangeEnd)}</div>
+    <label class="field"><span>Title</span><input class="input" name="title" placeholder="Meeting" autofocus></label>
+    <div class="grid2"><label class="field"><span>Starts</span><input class="input" type="time" name="time" value="${t}" step="300" required></label>
+      <label class="field"><span>Length</span><select class="input" name="minutes">${BOOK_MINUTES.map(n => `<option value="${n}" ${n === m.minutes ? 'selected' : ''}>${n < 60 ? `${n} min` : n % 60 ? `${Math.floor(n / 60)} hr ${n % 60} min` : `${n / 60} hr`}</option>`).join('')}</select></label></div>
+    <div class="grid2"><label class="field"><span>Invitee name <span class="muted">(optional)</span></span><input class="input" name="name"></label>
+      <label class="field"><span>Invitee email <span class="muted">(optional)</span></span><input class="input" name="email" type="email"></label></div>
     <label class="field"><span>Notes</span><textarea class="input" name="notes" rows="2"></textarea></label>
-    ${store.google.connected ? `<label class="check"><input type="checkbox" name="meet" ${mt.addMeetLink ? 'checked' : ''}>Add a Google Meet link</label>
-      <div class="small muted">Google emails an invitation to the invitee.</div>` : '<div class="small muted">Not connected to Google: this is saved as a Cadence task only.</div>'}
+    ${g ? `<label class="check"><input type="checkbox" name="meet" checked>Add a Google Meet link</label>
+      <div class="small muted">Saved to Google Calendar as a closed event. If you add an email, Google sends them an invitation.</div>`
+      : '<div class="small muted">Google Calendar isn’t connected, so this is saved as a Cadence event only (no invitation).</div>'}
     ${m.error ? `<div class="error">${esc(m.error)}</div>` : ''}
     </div><div class="foot"><span class="grow"></span><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" ${m.working ? 'disabled' : ''}>Book</button></div></form>`;
 }
@@ -1082,14 +1126,14 @@ function beginReflection(o) {
 }
 
 function newTaskAt(day, minutes) {
-  openEditor(M.newTask({ startDate: M.iso(M.startOfDay(day)), ...(minutes != null ? { timeMinutes: minutes } : {}), channels: [...store.settings.defaultChannels] }), true);
+  openEditor(M.newTask({ busy: false, startDate: M.iso(M.startOfDay(day)), ...(minutes != null ? { timeMinutes: minutes } : {}), channels: [...store.settings.defaultChannels] }), true);
 }
 
 /** A new event defaults to the next whole hour, one hour long, with a 10-minute heads-up. */
 function newEventAt(day, minutes) {
   const now = new Date();
   const m = minutes ?? (M.sameDay(day, now) ? Math.min(23 * 60, (now.getHours() + 1) * 60) : 9 * 60);
-  openEditor(M.newTask({ kind: 'event', color: 'teal', startDate: M.iso(M.startOfDay(day)), timeMinutes: m, durationMinutes: 60,
+  openEditor(M.newTask({ kind: 'event', busy: true, color: 'teal', startDate: M.iso(M.startOfDay(day)), timeMinutes: m, durationMinutes: 60,
     reminderOffsets: [10], channels: [...store.settings.defaultChannels] }), true);
 }
 
@@ -1123,6 +1167,7 @@ const actions = {
     readEditorInputs();
     const m = ui.modal, k = el.dataset.kind;
     m.draft.kind = k;
+    if (!m.busyChosen) m.draft.busy = k === 'event';   // events start closed, tasks open
     if (k === 'event' && m.isNew) {
       if (!m.hasTime) { m.hasTime = true; m.time = '09:00'; }
       if (m.draft.durationMinutes === 30) m.draft.durationMinutes = 60;
@@ -1130,6 +1175,7 @@ const actions = {
     }
     renderModal();
   },
+  'edit-busy': el => { readEditorInputs(); ui.modal.draft.busy = el.dataset.busy === '1'; ui.modal.busyChosen = true; renderModal(); },
   'new-at': el => { const d = new Date(Number(el.dataset.at)); newTaskAt(d, Math.min(1435, Math.floor(M.minutesOf(d) / 5) * 5)); },
   edit: el => { const t = store.tasks.get(el.dataset.task); if (t) openEditor(t, false); },
   toggle: el => toggleOcc(el.dataset.occ, el.dataset.ctx),
@@ -1190,17 +1236,27 @@ const actions = {
     store.deleteReflection(r.id);
     toast('Reflection deleted', { icon: 'trash', undo: () => store.restoreReflection(copy) });
   },
-  'pick-meeting': el => { ui.booking.meetingId = el.dataset.id; render(); },
   'busy-refresh': () => { ui.booking.loadedFor = null; loadBusy(); },
   'copy-avail': () => {
-    const mt = meeting(), tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    let text = `Here are some times that work for a ${mt.minutes}-minute ${mt.name.toLowerCase()} (${tz}):\n\n`;
-    for (const [d, ss] of ui.booking.slots.slice(0, 5)) text += `• ${M.fmtDay(d, { weekday: 'long', month: 'short', day: 'numeric' })}: ${ss.slice(0, 8).map(s => M.fmtTime(s.start)).join(', ')}\n`;
-    text += '\nLet me know which works and I’ll send an invite.';
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    let text = `Here’s when I’m free over the next week (${tz}):\n\n`;
+    for (const d of ui.booking.week || []) if (d.open.length) {
+      text += `• ${M.fmtDay(d.day, { weekday: 'long', month: 'short', day: 'numeric' })}: ${d.open.map(([s, e]) => `${M.fmtTime(s)}–${M.fmtTime(e)}`).join(', ')}\n`;
+    }
+    text += '\nLet me know what works and I’ll send an invite.';
     navigator.clipboard?.writeText(text);
-    ui.booking.message = 'Availability copied to the clipboard.'; render();
+    ui.booking.message = 'Open times copied to the clipboard.'; render();
   },
-  book: el => { const slot = ui.booking.slots[el.dataset.d][1][el.dataset.s]; openModal({ type: 'booking', slot }); },
+  'ot-book': (el, e) => {
+    // Start where you clicked (rounded down to 15 minutes), kept inside the open stretch.
+    const s = Number(el.dataset.s), end = Number(el.dataset.e);
+    const r = el.getBoundingClientRect();
+    const at = s + ((e?.clientY ?? r.top) - r.top) / r.height * (end - s);
+    const q = 15 * 60_000, latest = Math.max(s, end - q);
+    let start = Math.min(latest, Math.max(s, Math.floor(at / q) * q));
+    if (start < s) start = s;
+    openModal({ type: 'booking', start: new Date(start), rangeEnd: new Date(end), minutes: Math.min(30, Math.max(15, Math.round((end - start) / 60_000))) });
+  },
   'sync-now': () => { syncUI.manual = true; store.sync(); },
   'copy-origin': () => { navigator.clipboard?.writeText(location.origin); toast('Address copied', { icon: 'copy' }); },
   'clear-flash': () => { ui.flash = null; render(); },
@@ -1236,8 +1292,6 @@ const actions = {
     const days = a.weekdays.includes(w) ? a.weekdays.filter(x => x !== w) : [...a.weekdays, w].sort();
     if (days.length) store.updateSettings({ availability: { ...a, weekdays: days } });
   },
-  'meeting-add': () => store.updateSettings({ meetingTypes: [...store.settings.meetingTypes, { id: M.uuid(), name: 'New meeting', minutes: 30, details: '', addMeetLink: true }] }),
-  'meeting-remove': el => store.updateSettings({ meetingTypes: store.settings.meetingTypes.filter((_, i) => i !== Number(el.dataset.i)) }),
   'edit-weekday': el => {
     readEditorInputs();
     const r = ui.modal.draft.recurrence, w = Number(el.dataset.w);
@@ -1298,18 +1352,7 @@ document.addEventListener('input', e => {
   const bind = el.dataset.bind;
   if (bind === 'todoSearch') { ui.todo.search = el.value; render(); }
   if (bind === 'reflSearch') { ui.reflSearch = el.value; render(); }
-  if (el.dataset.meeting != null && el.type !== 'checkbox' && el.tagName === 'INPUT') {
-    clearTimeout(el._t);
-    el._t = setTimeout(() => updateMeeting(el), 500);
-  }
 });
-
-function updateMeeting(el) {
-  const i = Number(el.dataset.meeting), f = el.dataset.field;
-  const types = structuredClone(store.settings.meetingTypes);
-  types[i][f] = el.type === 'checkbox' ? el.checked : f === 'minutes' ? Number(el.value) : el.value;
-  store.updateSettings({ meetingTypes: types });
-}
 
 document.addEventListener('change', e => {
   const el = e.target;
@@ -1333,7 +1376,6 @@ document.addEventListener('change', e => {
     store.updateSettings({ [key]: [...set] });
     return;
   }
-  if (el.dataset.meeting != null) { updateMeeting(el); return; }
   if (el.dataset.actChange === 'browser-reminders') { store.setDevice('browserReminders', el.checked); render(); return; }
   if (el.dataset.actChange === 'gcal') {
     const ids = [...document.querySelectorAll('[data-act-change="gcal"]:checked')].map(x => x.value);
@@ -1399,19 +1441,26 @@ document.addEventListener('submit', async e => {
   } else if (kind === 'editor') {
     saveEditor();
   } else if (kind === 'booking') {
-    const m = ui.modal, fd = new FormData(form), mt = meeting();
-    const name = String(fd.get('name')).trim(), email = String(fd.get('email') || '').trim();
-    const title = String(fd.get('title')).trim() || `${mt.name} with ${name}`;
+    const m = ui.modal, fd = new FormData(form);
+    const name = String(fd.get('name') || '').trim(), email = String(fd.get('email') || '').trim();
+    const title = String(fd.get('title') || '').trim() || (name ? `Meeting with ${name}` : 'Meeting');
+    const [hh, mm] = String(fd.get('time')).split(':').map(Number);
+    const minutes = Number(fd.get('minutes')) || 30, notes = String(fd.get('notes') || '');
+    const start = M.dayAt(m.start, hh * 60 + mm), end = M.addMinutes(start, minutes);
+    const local = M.newTask({ kind: 'event', busy: true, color: 'purple', title, notes, startDate: M.iso(M.startOfDay(start)),
+      timeMinutes: hh * 60 + mm, durationMinutes: minutes, reminderOffsets: [10], channels: [...store.settings.defaultChannels] });
     m.working = true; m.error = null; renderModal();
     try {
       if (store.google.connected) {
-        await store.createGoogleEvent({ title, details: String(fd.get('notes')), start: M.iso(m.slot.start), end: M.iso(m.slot.end),
-          attendees: [{ email, name }], addMeetLink: fd.get('meet') === 'on' });
-        ui.booking.message = `Booked “${title}” — invitation sent to ${email}.`;
+        const ev = await store.createGoogleEvent({ title, details: notes, start: M.iso(start), end: M.iso(end), busy: true,
+          ...(email ? { attendees: [{ email, name }] } : {}), addMeetLink: fd.get('meet') === 'on' });
+        // Keep the synced copy right away (same ID the importer gives it) so open time updates at once.
+        store.upsertTask({ ...local, id: await M.stableUUID(`google:${ev.id}`), source: 'google', googleEventID: ev.id,
+          sourceCalendar: ev.calendarID || 'primary', ...(ev.link ? { externalURL: ev.link } : {}) });
+        ui.booking.message = email ? `Booked “${title}” — invitation sent to ${email}.` : `Booked “${title}” in Cadence and Google Calendar.`;
       } else {
-        store.upsertTask(M.newTask({ title, notes: String(fd.get('notes')), startDate: M.iso(M.startOfDay(m.slot.start)),
-          timeMinutes: M.minutesOf(m.slot.start), durationMinutes: mt.minutes, reminderOffsets: [10], channels: [...store.settings.defaultChannels], color: 'purple' }));
-        ui.booking.message = `Saved “${title}” to your Cadence calendar.`;
+        store.upsertTask(local);
+        ui.booking.message = `Booked “${title}” on your Cadence calendar.`;
       }
       ui.booking.loadedFor = null;
       closeModal();
@@ -1429,6 +1478,7 @@ document.addEventListener('keydown', e => {
     const route = Object.entries(SHORTCUT_FOR).find(([, key]) => key.toLowerCase() === k)?.[0];
     if (route) { e.preventDefault(); navigate(route); return; }
     if (k === 'n') { e.preventDefault(); newTaskAt(new Date()); return; }
+    if (k === 'e') { e.preventDefault(); newEventAt(new Date()); return; }
     if (k === 'c') { e.preventDefault(); reminders.checkIn('Daily check-in', { manual: true }); return; }
     if (k === 's') { e.preventDefault(); syncUI.manual = true; store.sync(); return; }
   }
@@ -1507,7 +1557,7 @@ async function googleTask(e) {
     startDate: M.iso(M.startOfDay(st)), ...(e.isAllDay ? {} : { timeMinutes: M.minutesOf(st) }),
     durationMinutes: e.isAllDay ? 30 : Math.max(5, Math.floor((en - st) / 60_000)),
     channels: [], color: 'blue', source: 'google', googleEventID: raw, sourceCalendar: e.calendarID,
-    ...(e.link ? { externalURL: e.link } : {}),
+    ...(e.link ? { externalURL: e.link } : {}), busy: !e.transparent,
   });
 }
 

@@ -317,6 +317,8 @@ final class Store: ObservableObject {
                 t.timeMinutes = item.timeMinutes; t.durationMinutes = item.durationMinutes
                 t.externalURL = item.externalURL; t.googleEventID = item.googleEventID
                 t.sourceCalendar = item.sourceCalendar ?? t.sourceCalendar
+                // Google also decides open/closed ("show as free/busy"); Calendly keeps what you chose.
+                if source == "google" { t.busy = item.busy }
                 if t != list[i] { list[i] = t; updated += 1 }
             } else {
                 list.append(item); added += 1

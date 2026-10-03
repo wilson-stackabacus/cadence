@@ -32,6 +32,7 @@ struct MenuBarView: View {
             Divider()
             HStack {
                 Button { model.newTask() } label: { Label("New Task", systemImage: "plus") }
+                Button { model.newEvent() } label: { Label("New Event", systemImage: "calendar.badge.plus") }
                 Button { engine.triggerCheckIn(reason: .manual) } label: { Label("Check In", systemImage: "sun.max") }
                 Spacer()
                 Button("Open Cadence") { model.openChecklist() }

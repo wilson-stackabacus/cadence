@@ -20,6 +20,8 @@ struct GoogleEvent: Identifiable, Hashable {
     let link: URL?
     let colorHex: String?
     var details: String? = nil
+    /// "Show as free" in Google: open time, just for info.
+    var transparent = false
 
     var color: Color { colorHex.flatMap(Color.init(hex:)) ?? .blue }
 }
@@ -34,6 +36,8 @@ struct NewGoogleEvent {
     var addMeetLink = false
     var rrule: String?
     var calendarID = "primary"
+    /// Closed (busy) or open ("show as free") in Google Calendar.
+    var busy = true
 }
 
 /// Google Calendar REST client: OAuth, event cache, free/busy and event creation.
@@ -127,7 +131,8 @@ final class GoogleCalendar: ObservableObject {
         return GoogleEvent(id: id, calendarID: d["calendarID"] as? String ?? "primary", title: d["title"] as? String ?? "(No title)",
                            start: start, end: max(end, start.addingTimeInterval(60)), isAllDay: allDay,
                            location: d["location"] as? String, link: (d["link"] as? String).flatMap(URL.init(string:)),
-                           colorHex: d["colorHex"] as? String, details: d["description"] as? String)
+                           colorHex: d["colorHex"] as? String, details: d["description"] as? String,
+                           transparent: d["transparent"] as? Bool ?? false)
     }
 
     private var calendarsParam: URLQueryItem {
@@ -434,7 +439,7 @@ final class GoogleCalendar: ObservableObject {
                 "start": Self.iso.string(from: e.start), "end": Self.iso.string(from: e.end),
                 "startDate": DateKey.string(e.start), "endDate": DateKey.string(e.start.adding(days: 1)),
                 "attendees": e.attendees.map { ["email": $0.email, "name": $0.name] },
-                "addMeetLink": e.addMeetLink, "timeZone": tz, "calendarID": e.calendarID,
+                "addMeetLink": e.addMeetLink, "timeZone": tz, "calendarID": e.calendarID, "busy": e.busy,
             ]
             if let r = e.rrule { body["rrule"] = r }
             let r = try await server("POST", "/api/google/events", [], body) as? [String: Any] ?? [:]
@@ -445,7 +450,7 @@ final class GoogleCalendar: ObservableObject {
             return GoogleEvent(id: "\(cal)|\(id)", calendarID: e.calendarID, title: e.title, start: e.start, end: e.end,
                                isAllDay: e.allDay, location: nil, link: (r["link"] as? String).flatMap(URL.init(string:)), colorHex: nil)
         }
-        var body: [String: Any] = ["summary": e.title, "description": e.details]
+        var body: [String: Any] = ["summary": e.title, "description": e.details, "transparency": e.busy ? "opaque" : "transparent"]
         if e.allDay {
             body["start"] = ["date": DateKey.string(e.start)]
             body["end"] = ["date": DateKey.string(e.start.adding(days: 1))]
@@ -472,7 +477,7 @@ final class GoogleCalendar: ObservableObject {
         return ev
     }
 
-    /// Pushes a Cadence edit of a synced event to Google (title, notes, time).
+    /// Pushes a Cadence edit of a synced event to Google (title, notes, time, open/closed).
     func update(calendarID: String, eventID: String, _ e: NewGoogleEvent) async throws {
         let tz = TimeZone.current.identifier
         if viaServer {
@@ -480,9 +485,10 @@ final class GoogleCalendar: ObservableObject {
                 "calendarID": calendarID, "eventId": eventID, "title": e.title, "details": e.details, "allDay": e.allDay,
                 "start": Self.iso.string(from: e.start), "end": Self.iso.string(from: e.end),
                 "startDate": DateKey.string(e.start), "endDate": DateKey.string(e.start.adding(days: 1)), "timeZone": tz,
+                "busy": e.busy,
             ])
         } else {
-            var body: [String: Any] = ["summary": e.title, "description": e.details]
+            var body: [String: Any] = ["summary": e.title, "description": e.details, "transparency": e.busy ? "opaque" : "transparent"]
             if e.allDay {
                 body["start"] = ["date": DateKey.string(e.start), "dateTime": NSNull(), "timeZone": NSNull()]
                 body["end"] = ["date": DateKey.string(e.start.adding(days: 1)), "dateTime": NSNull(), "timeZone": NSNull()]
@@ -602,7 +608,8 @@ final class GoogleCalendar: ObservableObject {
                            start: start, end: max(end, start.addingTimeInterval(60)), isAllDay: allDay,
                            location: item["location"] as? String,
                            link: (item["htmlLink"] as? String).flatMap(URL.init(string:)),
-                           colorHex: colorHex, details: item["description"] as? String)
+                           colorHex: colorHex, details: item["description"] as? String,
+                           transparent: (item["transparency"] as? String) == "transparent")
     }
 
     private static func encode(_ s: String) -> String {

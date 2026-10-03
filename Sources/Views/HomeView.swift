@@ -33,7 +33,7 @@ struct HomeView: View {
                     tile(.month, now.formatted(.dateTime.month(.abbreviated)), "see the whole month", .teal)
                     tile(.todo, "\(store.tasks.filter { $0.archived != true }.count)", overdue > 0 ? "\(overdue) overdue" : "all your tasks", .orange)
                     tile(.reflections, "\(store.reflections.count)", store.reflectionStreak > 0 ? "\(store.reflectionStreak)-day streak" : "your record", .indigo)
-                    tile(.booking, calendly.isConnected ? "\(calendly.eventTypes.count)" : "—", calendly.isConnected ? "Calendly links" : "share open times", .purple)
+                    tile(.booking, durationText(BookingView.plans(store: store, google: google, busy: []).reduce(0) { $0 + $1.total }), "open in the next 7 days", .green)
                     tile(.settings, sync.isSignedIn ? "Synced" : "Local", google.isConnected ? "Google connected" : "reminders & sync", .gray)
                 }
             }

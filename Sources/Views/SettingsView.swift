@@ -30,7 +30,6 @@ struct SettingsView: View {
             calendlySection
             importSection
             availabilitySection
-            meetingTypesSection
             dataSection
         }
         .formStyle(.grouped)
@@ -343,42 +342,14 @@ struct SettingsView: View {
             Picker("Until", selection: $store.settings.availability.endMinutes) {
                 ForEach(Array(stride(from: 8 * 60, through: 23 * 60, by: 30)), id: \.self) { Text(timeString(minutes: $0)).tag($0) }
             }
-            Picker("Buffer around meetings", selection: $store.settings.availability.bufferMinutes) {
+            Picker("Breathing room around closed items", selection: $store.settings.availability.bufferMinutes) {
                 ForEach([0, 5, 10, 15, 30], id: \.self) { Text($0 == 0 ? "None" : "\($0) minutes").tag($0) }
             }
-            Picker("Minimum notice", selection: $store.settings.availability.minNoticeHours) {
-                ForEach([0, 1, 2, 4, 12, 24, 48], id: \.self) { Text($0 == 0 ? "None" : "\($0) hours").tag($0) }
-            }
-            Stepper("Look ahead \(store.settings.availability.daysAhead) days", value: $store.settings.availability.daysAhead, in: 1...60)
         } header: {
-            Text("Booking availability")
-        }
-    }
-
-    private var meetingTypesSection: some View {
-        Section {
-            ForEach($store.settings.meetingTypes) { $mt in
-                HStack {
-                    TextField("Name", text: $mt.name).frame(maxWidth: 180)
-                    Picker("", selection: $mt.minutes) {
-                        ForEach([15, 20, 30, 45, 60, 90], id: \.self) { Text("\($0) min").tag($0) }
-                    }
-                    .labelsHidden()
-                    .frame(width: 90)
-                    TextField("Description", text: $mt.details)
-                    Toggle("Meet", isOn: $mt.addMeetLink).help("Add a Google Meet link")
-                    Button {
-                        store.settings.meetingTypes.removeAll { $0.id == mt.id }
-                    } label: { Image(systemName: "minus.circle") }
-                        .buttonStyle(.borderless)
-                        .disabled(store.settings.meetingTypes.count <= 1)
-                }
-            }
-            Button { store.settings.meetingTypes.append(MeetingType(name: "New meeting", minutes: 30)) } label: {
-                Label("Add meeting type", systemImage: "plus")
-            }
-        } header: {
-            Text("Meeting types")
+            Text("Open hours")
+        } footer: {
+            Text("When you're normally free to be booked. Booking shows what's left of these hours after your closed tasks and events.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 

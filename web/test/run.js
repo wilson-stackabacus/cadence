@@ -1,5 +1,5 @@
 // Mirrors the Mac app's recurrence checks so both platforms agree.
-import { occurs, countWords, rrule, newTask, parseKey, iso, startOfDay, recurrenceSummary } from '../public/js/model.js';
+import { occurs, countWords, rrule, newTask, parseKey, iso, startOfDay, recurrenceSummary, openRanges, isBusy, dayAt } from '../public/js/model.js';
 let fail = 0;
 const check = (ok, msg) => { console.log(ok ? 'PASS' : 'FAIL', msg); if (!ok) fail++; };
 const d = parseKey;
@@ -24,5 +24,13 @@ check(rrule(t.recurrence, t.startDate) === 'RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=M
 check(rrule(u.recurrence, u.startDate) === 'RRULE:FREQ=DAILY;INTERVAL=3;COUNT=4', 'rrule count');
 check(recurrenceSummary({ frequency: 'weekly', interval: 1, weekdays: [2, 3, 4, 5, 6], end: { never: {} } }, new Date()) === 'Every weekday', 'summary');
 check(!iso(new Date()).includes('.'), 'ISO has no milliseconds (Swift-compatible)');
+check(isBusy({ kind: 'event' }) && !isBusy({}) && isBusy({ source: 'google' }) && !isBusy({ kind: 'event', busy: false }) && isBusy({ busy: true }), 'open/closed defaults');
+// Open time: Thu 2026-10-01, open 9–17, 10-minute buffer, a closed 10:00–11:00 and an all-past morning cut at 12:02.
+const thu = d('2026-10-01'), hrs = { weekdays: [2, 3, 4, 5, 6], startMinutes: 540, endMinutes: 1020, bufferMinutes: 10 };
+const fmtR = r => r.map(([a, b]) => `${new Date(a).getHours()}:${new Date(a).getMinutes()}-${new Date(b).getHours()}:${new Date(b).getMinutes()}`).join(',');
+check(fmtR(openRanges(thu, hrs, [[+dayAt(thu, 600), +dayAt(thu, 660)]], 0)) === '9:0-9:50,11:10-17:0', 'open ranges with buffer');
+check(fmtR(openRanges(thu, hrs, [], +dayAt(thu, 722))) === '12:5-17:0', 'open ranges skip the past');
+check(openRanges(d('2026-10-03'), hrs, [], 0).length === 0, 'no open time on days off');
+check(openRanges(thu, hrs, [[+thu, +dayAt(thu, 1440)]], 0).length === 0, 'closed all-day blocks the day');
 console.log(fail ? `${fail} failed` : 'all passed');
 process.exit(fail ? 1 : 0);

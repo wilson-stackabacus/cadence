@@ -90,6 +90,28 @@ func eventNotes(_ description: String?, _ location: String?) -> String {
     return t.isEmpty ? (location ?? "").trimmingCharacters(in: .whitespacesAndNewlines) : t
 }
 
+/// Open time on `day`: your open hours minus closed items (padded by the buffer) and time already
+/// past. Same rule as openRanges() in the web app (model.js).
+func openRanges(on day: Date, hours: Availability, blocked: [DateInterval], now: Date = Date()) -> [DateInterval] {
+    guard hours.weekdays.contains(Calendar.current.component(.weekday, from: day)),
+          hours.endMinutes > hours.startMinutes else { return [] }
+    let buffer = TimeInterval(hours.bufferMinutes * 60)
+    var free = [DateInterval(start: dayAt(day, minutes: hours.startMinutes), end: dayAt(day, minutes: hours.endMinutes))]
+    // The past, up to the next 5 minutes.
+    let pastEnd = Date(timeIntervalSince1970: (now.timeIntervalSince1970 / 300).rounded(.up) * 300)
+    let cuts = blocked.map { ($0.start.addingTimeInterval(-buffer), $0.end.addingTimeInterval(buffer)) } + [(Date.distantPast, pastEnd)]
+    for (cs, ce) in cuts {
+        free = free.flatMap { f -> [DateInterval] in
+            if ce <= f.start || cs >= f.end { return [f] }
+            var out: [DateInterval] = []
+            if cs > f.start { out.append(DateInterval(start: f.start, end: cs)) }
+            if ce < f.end { out.append(DateInterval(start: ce, end: f.end)) }
+            return out
+        }
+    }
+    return free.filter { $0.duration >= 5 * 60 }
+}
+
 /// Counts words the way a person would: whitespace-separated chunks containing a letter or digit.
 func countWords(_ text: String) -> Int {
     text.split(whereSeparator: { $0.isWhitespace || $0.isNewline })

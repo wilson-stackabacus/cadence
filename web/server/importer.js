@@ -39,10 +39,11 @@ export async function toTask(e, tz) {
     recurrence: { frequency: 'none', interval: 1, weekdays: [], end: { never: {} } },
     reminderOffsets: [0], channels: [], color: 'blue', completions: {}, skipped: [], createdAt: iso(new Date()),
     source: 'google', googleEventID: raw, sourceCalendar: e.calendarID, ...(e.link ? { externalURL: e.link } : {}),
+    busy: !e.transparent,
   };
 }
 
-const FIELDS = ['title', 'notes', 'startDate', 'timeMinutes', 'durationMinutes', 'externalURL', 'googleEventID', 'sourceCalendar'];
+const FIELDS = ['title', 'notes', 'startDate', 'timeMinutes', 'durationMinutes', 'externalURL', 'googleEventID', 'sourceCalendar', 'busy'];
 
 export async function importGoogle(userId) {
   const tok = (await db.execute({ sql: 'SELECT time_zone, calendar_ids FROM google_tokens WHERE user_id = ?', args: [userId] })).rows[0];

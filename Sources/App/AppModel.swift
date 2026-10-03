@@ -102,6 +102,7 @@ final class AppModel: ObservableObject {
         var t = PlanTask(title: "", startDate: day.startOfDay, timeMinutes: m, durationMinutes: 60,
                          reminderOffsets: [10], channels: store.settings.defaultChannels, color: .teal)
         t.kind = "event"
+        t.busy = true   // events you make here start closed
         editingTask = t
         windows.showMain()
     }

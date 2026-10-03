@@ -358,6 +358,13 @@ enum CalendarItem: Identifiable, Hashable {
         if case .google = self { return true }
         return false
     }
+    /// Closed items block their time; open ones are just for info.
+    var isBusy: Bool {
+        switch self {
+        case .task(let o): return o.isBusy
+        case .google(let e): return !e.transparent
+        }
+    }
     /// Shown as an event (Google event or a Cadence event): no checkbox, calendar styling.
     var isCalendarEvent: Bool {
         if case .task(let o) = self { return o.isEvent }
@@ -598,5 +605,23 @@ struct CalendarNav: View {
             Button("Today", action: onToday)
             Button(action: onNext) { Image(systemName: "chevron.right") }.help("Next")
         }
+    }
+}
+
+/// Diagonal stripes that mark "open" (just-for-info) items and Google busy times.
+struct OpenStripes: View {
+    var color: Color
+    var opacity = 0.18
+    var body: some View {
+        Canvas { ctx, size in
+            var p = Path()
+            var x: CGFloat = -size.height
+            while x < size.width {
+                p.move(to: CGPoint(x: x, y: size.height)); p.addLine(to: CGPoint(x: x + size.height, y: 0))
+                x += 8
+            }
+            ctx.stroke(p, with: .color(color.opacity(opacity)), lineWidth: 3)
+        }
+        .allowsHitTesting(false)
     }
 }

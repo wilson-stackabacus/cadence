@@ -31,6 +31,8 @@ export const isSilent = task => !(task.channels && task.channels.length);
 /** Events live on the calendars only: never on the checklist, no check-off, no reflection.
  *  Imported items (Google, Calendly) are events unless you explicitly make them a task. */
 export const isEvent = task => task.kind === 'event' || (task.kind !== 'task' && Boolean(task.source));
+/** Closed items block their time; open ones are just for info. Unset: events are closed, tasks open. */
+export const isBusy = task => task.busy ?? isEvent(task);
 
 // ---------- dates ----------
 export const startOfDay = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
@@ -191,9 +193,26 @@ export function makeOccurrence(task, day) {
     start,
     end: start ? addMinutes(start, Math.max(5, task.durationMinutes || 30)) : null,
     event: isEvent(task),
+    busy: isBusy(task),
     done: !isEvent(task) && Boolean(task.completions && task.completions[key]),
     overdue: !isEvent(task) && !(task.completions && task.completions[key]) && d < startOfDay(new Date()),
   };
+}
+
+/**
+ * Open time on `day`: your open hours minus closed items (padded by `bufferMinutes`) and time
+ * already past. `blocked` is [[startMs, endMs], ...]; returns the same shape, in order.
+ */
+export function openRanges(day, hours, blocked, now = Date.now()) {
+  if (!hours.weekdays.includes(weekday(day)) || hours.endMinutes <= hours.startMinutes) return [];
+  const buf = (hours.bufferMinutes || 0) * 60_000;
+  let free = [[+dayAt(day, hours.startMinutes), +dayAt(day, hours.endMinutes)]];
+  const cuts = blocked.map(([s, e]) => [s - buf, e + buf]);
+  cuts.push([-Infinity, Math.ceil(now / 300_000) * 300_000]);   // the past, to the next 5 minutes
+  for (const [cs, ce] of cuts) {
+    free = free.flatMap(([fs, fe]) => ce <= fs || cs >= fe ? [[fs, fe]] : [...(cs > fs ? [[fs, cs]] : []), ...(ce < fe ? [[ce, fe]] : [])]);
+  }
+  return free.filter(([fs, fe]) => fe - fs >= 5 * 60_000);
 }
 
 export function sortOccurrences(a, b) {
