@@ -243,12 +243,7 @@ export const DEFAULT_SETTINGS = {
   defaultChannels: ['notification', 'banner'], untimedReminderMinutes: 540, bannerAutoDismissSeconds: 0,
   minReflectionWords: 20, showGoogleEvents: true, googleEventReminderMinutes: 0,
   autoImportCalendars: true, importDaysAhead: 14,
-  availability: { weekdays: [2, 3, 4, 5, 6], startMinutes: 540, endMinutes: 1020, bufferMinutes: 10, minNoticeHours: 4, daysAhead: 14 },
-  meetingTypes: [
-    { id: 'A1B2C3D4-0000-4000-8000-000000000015', name: 'Quick chat', minutes: 15, details: 'A short check-in.', addMeetLink: true },
-    { id: 'A1B2C3D4-0000-4000-8000-000000000030', name: 'Meeting', minutes: 30, details: 'A regular 30-minute meeting.', addMeetLink: true },
-    { id: 'A1B2C3D4-0000-4000-8000-000000000060', name: 'Deep dive', minutes: 60, details: 'An hour to work through something in depth.', addMeetLink: true },
-  ],
+  availability: { weekdays: [2, 3, 4, 5, 6], startMinutes: 540, endMinutes: 1020, bufferMinutes: 10 },
 };
 
 export const CHANNELS = [

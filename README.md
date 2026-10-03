@@ -1,7 +1,7 @@
 # Cadence
 
 A macOS planner that keeps you checking your list: weekly and monthly calendars, recurring tasks,
-a to-do list, reminders that pop up when you choose, Google Calendar sync, Calendly-style booking,
+a to-do list, reminders that pop up when you choose, Google Calendar sync, a 7-day view of your open time,
 and a required reflection (20+ words) every time you check something off.
 
 ## Build & run

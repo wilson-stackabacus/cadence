@@ -233,29 +233,26 @@ struct Reflection: Codable, Identifiable, Hashable {
     var wordCount: Int { countWords(text) }
 }
 
-// MARK: - Booking (Calendly-style)
-
-struct MeetingType: Codable, Identifiable, Hashable {
-    var id = UUID()
-    var name: String
-    var minutes: Int
-    var details: String = ""
-    var addMeetLink = true
-
-    static let defaults: [MeetingType] = [
-        MeetingType(name: "Quick chat", minutes: 15, details: "A short check-in."),
-        MeetingType(name: "Meeting", minutes: 30, details: "A regular 30-minute meeting."),
-        MeetingType(name: "Deep dive", minutes: 60, details: "An hour to work through something in depth."),
-    ]
-}
+// MARK: - Open hours (Booking)
 
 struct Availability: Codable, Hashable {
     var weekdays: [Int] = [2, 3, 4, 5, 6]
     var startMinutes = 9 * 60
     var endMinutes = 17 * 60
+    /// Breathing room kept free around closed items.
     var bufferMinutes = 10
-    var minNoticeHours = 4
-    var daysAhead = 14
+
+    init() {}
+
+    // Tolerant, like the settings: missing keys keep their defaults, unknown ones are ignored.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = Availability()
+        weekdays = c.value(.weekdays, d.weekdays)
+        startMinutes = c.value(.startMinutes, d.startMinutes)
+        endMinutes = c.value(.endMinutes, d.endMinutes)
+        bufferMinutes = c.value(.bufferMinutes, d.bufferMinutes)
+    }
 }
 
 // MARK: - Settings
@@ -293,9 +290,8 @@ struct AppSettings: Codable {
     var autoImportCalendars = true
     var importDaysAhead = 14
 
-    // Booking
+    // Booking (open hours)
     var availability = Availability()
-    var meetingTypes: [MeetingType] = MeetingType.defaults
 
     init() {}
 
@@ -322,7 +318,6 @@ struct AppSettings: Codable {
         showGoogleEvents = c.value(.showGoogleEvents, d.showGoogleEvents)
         googleEventReminderMinutes = c.value(.googleEventReminderMinutes, d.googleEventReminderMinutes)
         availability = c.value(.availability, d.availability)
-        meetingTypes = c.value(.meetingTypes, d.meetingTypes)
         autoImportCalendars = c.value(.autoImportCalendars, d.autoImportCalendars)
         importDaysAhead = c.value(.importDaysAhead, d.importDaysAhead)
     }
@@ -347,7 +342,6 @@ struct SyncedSettings: Codable, Equatable {
     var showGoogleEvents: Bool
     var googleEventReminderMinutes: Int
     var availability: Availability
-    var meetingTypes: [MeetingType]
     var autoImportCalendars: Bool
     var importDaysAhead: Int
 
@@ -359,7 +353,7 @@ struct SyncedSettings: Codable, Equatable {
         defaultChannels = s.defaultChannels; untimedReminderMinutes = s.untimedReminderMinutes
         bannerAutoDismissSeconds = s.bannerAutoDismissSeconds; minReflectionWords = s.minReflectionWords
         showGoogleEvents = s.showGoogleEvents; googleEventReminderMinutes = s.googleEventReminderMinutes
-        availability = s.availability; meetingTypes = s.meetingTypes
+        availability = s.availability
         autoImportCalendars = s.autoImportCalendars; importDaysAhead = s.importDaysAhead
     }
 
@@ -382,7 +376,6 @@ struct SyncedSettings: Codable, Equatable {
         showGoogleEvents = c.value(.showGoogleEvents, showGoogleEvents)
         googleEventReminderMinutes = c.value(.googleEventReminderMinutes, googleEventReminderMinutes)
         availability = c.value(.availability, availability)
-        meetingTypes = c.value(.meetingTypes, meetingTypes)
         autoImportCalendars = c.value(.autoImportCalendars, autoImportCalendars)
         importDaysAhead = c.value(.importDaysAhead, importDaysAhead)
     }
@@ -395,7 +388,7 @@ struct SyncedSettings: Codable, Equatable {
         s.defaultChannels = defaultChannels; s.untimedReminderMinutes = untimedReminderMinutes
         s.bannerAutoDismissSeconds = bannerAutoDismissSeconds; s.minReflectionWords = minReflectionWords
         s.showGoogleEvents = showGoogleEvents; s.googleEventReminderMinutes = googleEventReminderMinutes
-        s.availability = availability; s.meetingTypes = meetingTypes
+        s.availability = availability
         s.autoImportCalendars = autoImportCalendars; s.importDaysAhead = importDaysAhead
     }
 }

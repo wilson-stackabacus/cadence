@@ -220,13 +220,6 @@ main { overflow: auto; min-width: 0; }
 .refl p { margin: 8px 0 0; white-space: pre-wrap; }
 
 /* ---------- booking ---------- */
-.mtypes { display: flex; gap: 10px; flex-wrap: wrap; }
-.mtype { width: 190px; padding: 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; text-align: left; }
-.mtype.on { border: 1.5px solid var(--accent); background: var(--accent-soft); }
-.slots { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
-.slotcol { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; flex: none; }
-.slotcol .hd { text-align: center; margin-bottom: 4px; }
-.slot { width: 96px; }
 
 /* ---------- settings ---------- */
 .settings { display: flex; flex-direction: column; gap: 18px; }
@@ -316,9 +309,8 @@ main { overflow: auto; min-width: 0; }
 /* =====================================================================
    Motion & feedback
    ===================================================================== */
-.btn, .checkbtn, .nav-item, .mtype, .swatch, .wd button, .slot { transition: transform .12s ease, background-color .15s, border-color .15s, box-shadow .15s, color .15s; }
+.btn, .checkbtn, .nav-item, .swatch, .wd button { transition: transform .12s ease, background-color .15s, border-color .15s, box-shadow .15s, color .15s; }
 .btn:active:not(:disabled), .wd button:active, .swatch:active { transform: scale(.96); }
-.mtype:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0, 0, 0, .12); }
 .checkbtn:hover { color: var(--accent); transform: scale(1.12); }
 .crow { transition: background-color .3s; border-radius: 8px; }
 .crow .title { transition: color .3s; }
