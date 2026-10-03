@@ -731,7 +731,7 @@ function settingsView() {
 }
 
 // ---------- Desktop downloads (GitHub release assets, fixed names) ----------
-const RELEASE = 'https://github.com/wilson-stackabacus/cadence/releases/latest/download';
+const RELEASE = 'https://github.com/wilsonwilson49/cadence/releases/latest/download';
 const DOWNLOADS = [
   ['mac', 'Mac', 'Cadence-mac.zip'], ['windows', 'Windows', 'Cadence-Setup.exe'],
   ['linux', 'Linux (AppImage)', 'Cadence.AppImage'], ['deb', 'Linux (.deb)', 'Cadence.deb'],
