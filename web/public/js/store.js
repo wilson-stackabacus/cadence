@@ -233,7 +233,7 @@ class Store {
       }
     }
     for (const t of [...this.tasks.values()]) {
-      if (t.source !== source || t.archived || Object.keys(t.completions || {}).length) continue;
+      if (t.source !== source || t.archived || M.hasHistory(t)) continue;
       const s = new Date(t.startDate);
       const missing = archiveMissing && !incoming.has(t.id) && s >= M.startOfDay(from) && s < to;
       if (missing || archiveIds.has(t.id)) { this.upsertTask({ ...t, archived: true }); removed++; }
@@ -245,11 +245,37 @@ class Store {
     if (M.countWords(text) < this.settings.minReflectionWords) return false;
     const t = this.tasks.get(occ.task.id);
     if (!t) return false;
-    this.upsertTask({ ...t, completions: { ...t.completions, [occ.key]: M.iso(new Date()) } });
-    const r = { id: M.uuid(), taskID: t.id, taskTitle: t.title, occurrenceKey: occ.key, text, createdAt: M.iso(new Date()) };
+    const missed = { ...t.missed };
+    delete missed[occ.key];
+    this.upsertTask({ ...t, completions: { ...t.completions, [occ.key]: M.iso(new Date()) }, missed });
+    this.#addReflection(t, occ, text);
+    return true;
+  }
+
+  /** "Didn't do it": settles the item without checking it off, with a reflection on why. */
+  miss(occ, text) {
+    if (M.countWords(text) < this.settings.minReflectionWords) return false;
+    const t = this.tasks.get(occ.task.id);
+    if (!t) return false;
+    const completions = { ...t.completions };
+    delete completions[occ.key];
+    this.upsertTask({ ...t, completions, missed: { ...t.missed, [occ.key]: M.iso(new Date()) } });
+    this.#addReflection(t, occ, text, 'missed');
+    return true;
+  }
+
+  unmiss(occ) {
+    const t = this.tasks.get(occ.task.id);
+    if (!t) return;
+    const missed = { ...t.missed };
+    delete missed[occ.key];
+    this.upsertTask({ ...t, missed });
+  }
+
+  #addReflection(t, occ, text, outcome) {
+    const r = { id: M.uuid(), taskID: t.id, taskTitle: t.title, occurrenceKey: occ.key, text, createdAt: M.iso(new Date()), ...(outcome ? { outcome } : {}) };
     this.reflections.set(r.id, r);
     this.#queue('reflection', r.id, r);
-    return true;
   }
 
   uncomplete(occ) {
@@ -295,14 +321,17 @@ class Store {
   overdue() {
     const today = M.startOfDay(new Date());
     return [...this.tasks.values()]
-      .filter(t => !t.archived && !M.isEvent(t) && t.recurrence.frequency === 'none' && M.startOfDay(t.startDate) < today && !Object.keys(t.completions || {}).length)
+      .filter(t => !t.archived && !M.isEvent(t) && t.recurrence.frequency === 'none' && M.startOfDay(t.startDate) < today && !M.hasHistory(t))
       .map(t => M.makeOccurrence(t, t.startDate))
       .sort((a, b) => a.day - b.day);
   }
 
   todayChecklist() { return [...this.overdue(), ...this.tasksOn(new Date())]; }
-  remainingToday() { return this.todayChecklist().filter(o => !o.done).length; }
-  reflectionFor(occ) { return [...this.reflections.values()].find(r => r.taskID === occ.task.id && r.occurrenceKey === occ.key); }
+  remainingToday() { return this.todayChecklist().filter(o => !o.resolved).length; }
+  /** The reflection for an occurrence: the check-off one, or with outcome 'missed' the "didn't do it" one. */
+  reflectionFor(occ, outcome = 'done') {
+    return [...this.reflections.values()].find(r => r.taskID === occ.task.id && r.occurrenceKey === occ.key && (r.outcome || 'done') === outcome);
+  }
 
   sortedReflections() { return [...this.reflections.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }
 

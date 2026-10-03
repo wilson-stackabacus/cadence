@@ -46,6 +46,8 @@ final class AppModel: ObservableObject {
 
     @Published var screen: Screen = .home
     @Published var reflectionTarget: Occurrence?
+    /// True when the open reflection is for "didn't do it" rather than a check-off.
+    @Published var reflectionMissed = false
     @Published var editingTask: PlanTask?
 
     private init() {
@@ -117,10 +119,16 @@ final class AppModel: ObservableObject {
         if occ.isDone { store.uncomplete(occ) } else { beginReflection(occ) }
     }
 
-    func beginReflection(_ occ: Occurrence) {
+    func beginReflection(_ occ: Occurrence, missed: Bool = false) {
         windows.showMain()
+        reflectionMissed = missed
         // Re-read the task so the sheet sees the latest state.
         if let t = store.task(occ.task.id) { reflectionTarget = Occurrence(task: t, day: occ.day) }
+    }
+
+    /// The X box: "didn't do it / couldn't" asks why; clicking it again undoes it.
+    func toggleMissed(_ occ: Occurrence) {
+        if occ.isMissed { store.unmiss(occ) } else { beginReflection(occ, missed: true) }
     }
 
     func openChecklist() {

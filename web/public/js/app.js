@@ -42,7 +42,7 @@ const reminders = new Reminders({
   banner: content => showBanner(content),
   checkIn: title => openModal({ type: 'checkin', title, reflecting: null }),
   openChecklist: occ => {
-    if (occ && !occ.done) beginReflection(occ);
+    if (occ && !occ.resolved) beginReflection(occ);
     else navigate('today');
   },
 });
@@ -174,10 +174,13 @@ function crow(o, { compact = false, showDate = false, ctx = '' } = {}) {
   if (t.source === 'google') meta.push(`<span>${ic('cal')}Google</span>`);
   if (M.isSilent(t)) meta.push(`<span title="No notifications">${ic('bell-off')}</span>`);
   if (t.externalURL && !compact) meta.push(`<a href="${esc(t.externalURL)}" target="_blank" rel="noopener" title="Open meeting link">${ic('link')}</a>`);
-  const hasRefl = o.done && store.reflectionFor(o);
-  return `<div class="crow ${o.done ? 'done' : ''} ${ui.justDone.has(o.id) ? 'just-done' : ''}">
+  if (o.missed) meta.unshift(`<span class="red"><b>Didn’t do it</b></span>`);
+  const hasRefl = o.resolved && store.reflectionFor(o, o.missed ? 'missed' : 'done');
+  return `<div class="crow ${o.done ? 'done' : ''} ${o.missed ? 'missed' : ''} ${ui.justDone.has(o.id) ? 'just-done' : ''}">
     <button class="checkbtn" style="${o.done ? `color:${color(t.color)}` : ''}" data-act="toggle" data-occ="${esc(o.id)}" data-ctx="${ctx}"
       title="${o.done ? 'Mark as not done' : 'Complete — you’ll write a short reflection first'}">${ic(o.done ? 'checked' : 'circle')}</button>
+    <button class="missbtn ${o.missed ? 'on' : ''}" data-act="miss" data-occ="${esc(o.id)}" data-ctx="${ctx}"
+      title="${o.missed ? 'Undo “didn’t do it”' : 'Didn’t do it / couldn’t — you’ll reflect on why'}">${ic('x')}</button>
     ${compact ? '' : `<span class="bar" style="background:${color(t.color)}"></span>`}
     <div class="grow"><div class="title ellipsis">${esc(t.title)}</div><div class="meta">${meta.join('')}</div></div>
     ${hasRefl ? `<span class="muted" title="Reflection saved">${ic('quote')}</span>` : ''}
@@ -204,7 +207,7 @@ function homeView() {
   const now = new Date();
   const all = store.todayChecklist();
   const done = all.filter(o => o.done).length;
-  const open = all.filter(o => !o.done);
+  const open = all.filter(o => !o.resolved);
   const hour = now.getHours();
   const greet = hour >= 5 && hour < 12 ? 'Good morning' : hour >= 12 && hour < 17 ? 'Good afternoon' : 'Good evening';
   const weekStart = M.startOfWeek(now);
@@ -212,7 +215,7 @@ function homeView() {
   const overdue = store.overdue().length;
   const latest = store.sortedReflections()[0];
   const nextTimed = [...store.occurrencesOn(now), ...store.occurrencesOn(M.addDays(now, 1))]
-    .filter(o => !o.done && o.start && o.start > now).sort((a, b) => a.start - b.start)[0];
+    .filter(o => !o.resolved && o.start && o.start > now).sort((a, b) => a.start - b.start)[0];
   const nextEvent = store.googleEventsOn(now).find(e => !e.isAllDay && e.startDate > now);
   const upNext = [nextTimed && { title: nextTimed.task.title, at: nextTimed.start, color: color(nextTimed.task.color) },
     nextEvent && { title: nextEvent.title, at: nextEvent.startDate, color: nextEvent.colorHex || '#0a84ff' }]
@@ -285,10 +288,11 @@ function eventRow(ev) {
 function todayView() {
   const today = new Date();
   const items = store.tasksOn(today), overdue = store.overdue(), all = [...overdue, ...items];
-  const done = all.filter(o => o.done).length;
+  const done = all.filter(o => o.done).length, settled = all.filter(o => o.resolved).length;
   const hour = today.getHours();
   const greet = hour >= 5 && hour < 12 ? 'Good morning' : hour >= 12 && hour < 17 ? 'Good afternoon' : 'Good evening';
-  const status = !all.length ? 'A clear day.' : done === all.length ? 'Everything is checked off. Nice work.' : `${all.length - done} of ${all.length} left to check off.`;
+  const status = !all.length ? 'A clear day.' : done === all.length ? 'Everything is checked off. Nice work.'
+    : settled === all.length ? `All settled: ${done} done, ${all.length - done} not done.` : `${all.length - settled} of ${all.length} left to check off.`;
   const events = scheduleOn(today);
   const s = store.settings;
   const perm = 'Notification' in window ? Notification.permission : 'unsupported';
@@ -319,7 +323,7 @@ function todayView() {
 // ---------- Week ----------
 function calItemsTimed(day) {
   const items = [];
-  for (const o of store.occurrencesOn(day)) if (o.start) items.push({ kind: o.event ? 'event' : 'task', o, start: o.start, end: o.end, title: o.task.title, color: color(o.task.color), done: o.done, id: `t|${o.id}` });
+  for (const o of store.occurrencesOn(day)) if (o.start) items.push({ kind: o.event ? 'event' : 'task', o, start: o.start, end: o.end, title: o.task.title, color: color(o.task.color), done: o.done, missed: o.missed, id: `t|${o.id}` });
   for (const e of store.googleEventsOn(day)) if (!e.isAllDay) items.push({ kind: 'google', e, start: e.startDate, end: e.endDate, title: e.title, color: e.colorHex || '#0a84ff', done: false, id: `g|${e.id}` });
   items.sort((a, b) => a.start - b.start || b.end - a.end);
   // Greedy lanes inside clusters of overlapping items.
@@ -335,13 +339,13 @@ function calItemsTimed(day) {
   return out;
 }
 
-const chipFor = it => `<div class="chip ${it.done ? 'done' : ''}" style="background:${tint(it.color, it.kind === 'task' ? .18 : .12)}" data-act="detail" data-item="${esc(it.id)}">
+const chipFor = it => `<div class="chip ${it.done ? 'done' : ''} ${it.missed ? 'missed' : ''}" style="background:${tint(it.color, it.kind === 'task' ? .18 : .12)}" data-act="detail" data-item="${esc(it.id)}">
   ${it.kind !== 'task' ? `<span style="color:${it.color}">${ic('cal')}</span>` : `<span class="dot" style="border-color:${it.color};background:${it.done ? it.color : 'transparent'}"></span>`}
   <span>${it.start && it.kind !== 'allday' ? `<span class="muted">${M.fmtTime(it.start)}</span> ` : ''}${esc(it.title)}</span></div>`;
 
 function allDayItems(day) {
   return [
-    ...store.occurrencesOn(day).filter(o => !o.start).map(o => ({ kind: o.event ? 'event' : 'task', o, title: o.task.title, color: color(o.task.color), done: o.done, id: `t|${o.id}` })),
+    ...store.occurrencesOn(day).filter(o => !o.start).map(o => ({ kind: o.event ? 'event' : 'task', o, title: o.task.title, color: color(o.task.color), done: o.done, missed: o.missed, id: `t|${o.id}` })),
     ...store.googleEventsOn(day).filter(e => e.isAllDay).map(e => ({ kind: 'google', e, title: e.title, color: e.colorHex || '#0a84ff', id: `g|${e.id}` })),
   ];
 }
@@ -357,7 +361,7 @@ function weekView() {
       <div class="row"><button class="btn" data-act="new-event">${ic('cal')} New event</button><button class="btn icon" data-act="week-prev" title="Previous week">${ic('left')}</button>
       <button class="btn" data-act="week-today">Today</button><button class="btn icon" data-act="week-next" title="Next week">${ic('right')}</button></div></div>
     <div class="week-head"><div></div>${days.map(d => {
-      const open = store.tasksOn(d).filter(o => !o.done).length;
+      const open = store.tasksOn(d).filter(o => !o.resolved).length;
       return `<div class="d ${M.isToday(d) ? 'today' : ''}"><div class="dow">${M.WEEKDAY_SHORT[d.getDay()].toUpperCase()}</div><div class="num">${d.getDate()}</div><div class="open">${open ? `${open} open` : ''}</div></div>`;
     }).join('')}</div>
     <div class="week-allday"><div class="lab">any<br>time</div>${days.map(d => {
@@ -371,7 +375,7 @@ function weekView() {
           const dayStart = M.startOfDay(d);
           const top = Math.max(0, (p.start - dayStart) / 3_600_000) * HOUR;
           const bottom = Math.min(24, (p.end - dayStart) / 3_600_000) * HOUR;
-          return `<div class="block ${p.done ? 'done' : ''} ${p.kind !== 'task' ? 'evt' : ''} ${busyOf(p) ? '' : 'free'}" data-item="${esc(p.id)}" data-start="${+p.start}" data-end="${+p.end}"
+          return `<div class="block ${p.done ? 'done' : ''} ${p.missed ? 'missed' : ''} ${p.kind !== 'task' ? 'evt' : ''} ${busyOf(p) ? '' : 'free'}" data-item="${esc(p.id)}" data-start="${+p.start}" data-end="${+p.end}"
             title="${busyOf(p) ? 'Closed' : 'Open (just for info)'} · click for details · double-click to add a task at this time"
             style="top:${top}px;height:${Math.max(20, bottom - top - 1)}px;left:calc(${(p.lane * 100) / p.lanes}% + 2px);width:calc(${100 / p.lanes}% - 4px);
             background:${tint(p.color, p.done ? .1 : p.kind !== 'task' ? .14 : .24)};border-color:${p.color}">
@@ -390,7 +394,7 @@ function monthView() {
   store.ensureGoogle(days[0], M.addDays(days[41], 1));
   const cells = days.map(d => {
     const items = [
-      ...store.occurrencesOn(d).map(o => ({ kind: o.event ? 'event' : 'task', title: o.task.title, color: color(o.task.color), done: o.done, id: `t|${o.id}` })),
+      ...store.occurrencesOn(d).map(o => ({ kind: o.event ? 'event' : 'task', title: o.task.title, color: color(o.task.color), done: o.done, missed: o.missed, id: `t|${o.id}` })),
       ...store.googleEventsOn(d).map(e => ({ kind: 'google', title: e.title, color: e.colorHex || '#0a84ff', id: `g|${e.id}` })),
     ];
     const max = 4, shown = items.length > max ? max - 1 : max;
@@ -398,7 +402,7 @@ function monthView() {
     const allDone = tasks.length && tasks.every(o => o.done);
     return `<div class="mcell ${d.getMonth() !== ui.month.getMonth() ? 'out' : ''} ${M.isToday(d) ? 'today' : ''} ${M.sameDay(d, ui.selectedDay) ? 'sel' : ''}" data-act="select-day" data-day="${M.dateKey(d)}">
       <div class="row"><span class="n">${d.getDate()}</span><span class="grow"></span>${allDone ? `<span class="green small" title="Everything done">${ic('check')}</span>` : ''}</div>
-      ${items.slice(0, shown).map(it => `<div class="chip ${it.done ? 'done' : ''}" style="background:${tint(it.color, .13)}">
+      ${items.slice(0, shown).map(it => `<div class="chip ${it.done ? 'done' : ''} ${it.missed ? 'missed' : ''}" style="background:${tint(it.color, .13)}">
         ${it.kind !== 'task' ? `<span style="color:${it.color}">${ic('cal')}</span>` : `<span class="dot" style="border-color:${it.color};background:${it.done ? 'transparent' : it.color}"></span>`}<span>${esc(it.title)}</span></div>`).join('')}
       ${items.length > shown ? `<div class="more">+${items.length - shown} more</div>` : ''}</div>`;
   }).join('');
@@ -428,7 +432,7 @@ function todoView() {
   if (t.mode === 'checklist') {
     const overdue = store.overdue().filter(o => match(o.task.title));
     const groups = [...Array(t.range)].map((_, i) => M.addDays(M.startOfDay(new Date()), i))
-      .map(d => [d, store.tasksOn(d).filter(o => match(o.task.title) && (t.showCompleted || !o.done))])
+      .map(d => [d, store.tasksOn(d).filter(o => match(o.task.title) && (t.showCompleted || !o.resolved))])
       .filter(([, list]) => list.length);
     const group = (title, icon, list, showDate) => `<div><div class="section-title">${ic(icon)}${title}
       <span class="small muted" style="font-weight:400">${list.filter(o => o.done).length}/${list.length} done</span></div>
@@ -488,25 +492,28 @@ function todoView() {
 function reflectionsView() {
   const all = store.sortedReflections();
   const q = ui.reflSearch.toLowerCase();
-  const list = all.filter(r => !q || r.text.toLowerCase().includes(q) || r.taskTitle.toLowerCase().includes(q));
+  const f = ui.reflFilter || 'all';
+  const missedCount = all.filter(r => r.outcome === 'missed').length;
+  const list = all.filter(r => (f === 'all' || (r.outcome || 'done') === f) && (!q || r.text.toLowerCase().includes(q) || r.taskTitle.toLowerCase().includes(q)));
   const words = all.reduce((n, r) => n + M.countWords(r.text), 0);
   const groups = new Map();
   for (const r of list) { const k = M.dateKey(r.createdAt); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
   const stat = (v, l, icon, c) => `<div class="stat" style="background:${tint(c, .1)}"><span style="color:${c}">${ic(icon)}</span><div><b>${v}</b><span class="small muted">${l}</span></div></div>`;
-  return `<div class="header"><div class="grow"><h1>Reflections</h1><div class="sub">A record of what you wrote each time you checked something off.</div></div>
+  return `<div class="header"><div class="grow"><h1>Reflections</h1><div class="sub">A record of what you wrote each time you checked something off, or didn’t get to it.</div></div>
       <button class="btn" data-act="export-refl" ${all.length ? '' : 'disabled'}>${ic('copy')} Export</button></div>
     <div class="page stack">
       <div class="stats">${stat(all.length, 'reflections', 'quote', '#5e5ce6')}${stat(words, 'words written', 'text', '#30b0c7')}
         ${stat(store.reflectionStreak, store.reflectionStreak === 1 ? 'day streak' : 'days streak', 'flame', '#ff9f0a')}
         ${stat(new Set(all.map(r => r.taskID)).size, 'different tasks', 'stack', '#30d158')}</div>
-      <input id="reflSearch" class="input" placeholder="Search reflections" value="${esc(ui.reflSearch)}" data-bind="reflSearch">
+      <div class="row" style="flex-wrap:wrap"><div class="seg">${[['all', 'All'], ['done', 'Done'], ['missed', `Didn’t do (${missedCount})`]].map(([k, l]) => `<button class="${f === k ? 'on' : ''}" data-act="refl-filter" data-f="${k}">${l}</button>`).join('')}</div>
+        <input id="reflSearch" class="input grow" placeholder="Search reflections" value="${esc(ui.reflSearch)}" data-bind="reflSearch"></div>
       ${!all.length ? empty('quote', 'No reflections yet', `Each time you check off a task you’ll write a short reflection (at least ${store.settings.minReflectionWords} words). They collect here.`) : ''}
       ${[...groups].map(([k, rs]) => `<div><div class="section-title">${M.isToday(M.parseKey(k)) ? 'Today' : M.fmtDay(M.parseKey(k), { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</div>
         <div class="stack" style="gap:8px">${rs.map(r => {
           const t = store.tasks.get(r.taskID);
           const forDay = r.occurrenceKey !== M.dateKey(r.createdAt) ? `<span class="small muted">for ${M.fmtDay(M.parseKey(r.occurrenceKey), { month: 'short', day: 'numeric' })}</span>` : '';
-          return `<div class="card refl"><div class="row"><span style="width:8px;height:8px;border-radius:50%;background:${color(t?.color ?? 'gray')}"></span>
-            <b>${esc(r.taskTitle)}</b>${forDay}<span class="grow"></span>
+          return `<div class="card refl ${r.outcome === 'missed' ? 'missed' : ''}"><div class="row"><span style="width:8px;height:8px;border-radius:50%;background:${color(t?.color ?? 'gray')}"></span>
+            <b>${esc(r.taskTitle)}</b>${r.outcome === 'missed' ? `<span class="tag-missed">${ic('x')} Didn’t do it</span>` : `<span class="tag-done">${ic('check')} Done</span>`}${forDay}<span class="grow"></span>
             <span class="small muted">${M.countWords(r.text)} words · ${M.fmtTime(r.createdAt)}</span>
             <button class="btn ghost sm icon" data-act="copy-refl" data-id="${r.id}" title="Copy">${ic('copy')}</button>
             <button class="btn ghost sm icon danger" data-act="delete-refl" data-id="${r.id}" title="Delete">${ic('trash')}</button></div>
@@ -771,8 +778,8 @@ function renderModal() {
   const m = ui.modal;
   if (!m) { root.innerHTML = ''; return; }
   let html = '';
-  if (m.type === 'reflection') html = reflectionDialog(m.occ, 'reflection');
-  else if (m.type === 'checkin') html = m.reflecting ? reflectionDialog(m.reflecting, 'checkin') : checkInDialog(m);
+  if (m.type === 'reflection') html = reflectionDialog(m.occ, 'reflection', m.mode);
+  else if (m.type === 'checkin') html = m.reflecting ? reflectionDialog(m.reflecting, 'checkin', m.reflectMode) : checkInDialog(m);
   else if (m.type === 'editor') html = editorDialog(m);
   else if (m.type === 'detail') html = detailDialog(m);
   else if (m.type === 'booking') html = bookingDialog(m);
@@ -803,26 +810,30 @@ function renderModal() {
 const PROMPTS = ['What went well, and why?', 'What got in the way or felt harder than expected?', 'What will you do differently next time?',
   'How did this move you toward a bigger goal?', 'What did you learn about how you work?'];
 
-function reflectionDialog(o, ctx) {
-  const min = store.settings.minReflectionWords;
+const MISSED_PROMPTS = ['What got in the way?', 'Was it in your control, or not?', 'What would make it happen next time?',
+  'Was it still the right thing to plan, or should it change?', 'How do you feel about skipping it?'];
+
+function reflectionDialog(o, ctx, mode = 'done') {
+  const min = store.settings.minReflectionWords, missed = mode === 'missed';
   const seed = [...(o.task.id + o.key)].reduce((n, c) => n + c.charCodeAt(0), 0);
-  const prompts = [0, 1, 2].map(i => PROMPTS[(seed + i) % PROMPTS.length]);
-  return `<form class="dialog" data-form="reflection" data-occ="${esc(o.id)}" data-ctx="${ctx}"><div class="body">
-    <div class="row" style="gap:12px"><span class="badge-icon" style="background:${color(o.task.color)}">${ic('quote')}</span>
-      <div class="grow"><h2>Reflect to complete</h2><div class="muted ellipsis">${esc(o.task.title)} · ${M.fmtDay(o.day, { weekday: 'long', month: 'short', day: 'numeric' })}</div></div></div>
-    <div>Write at least ${min} words before checking this off. Some prompts:<ul class="prompts">${prompts.map(p => `<li>${p}</li>`).join('')}</ul></div>
-    <textarea class="input" id="reflText" rows="7" placeholder="How did it go?" autofocus data-min="${min}"></textarea></div>
+  const pool = missed ? MISSED_PROMPTS : PROMPTS;
+  const prompts = [0, 1, 2].map(i => pool[(seed + i) % pool.length]);
+  return `<form class="dialog" data-form="reflection" data-occ="${esc(o.id)}" data-ctx="${ctx}" data-mode="${mode}"><div class="body">
+    <div class="row" style="gap:12px"><span class="badge-icon" style="background:${missed ? 'var(--red)' : color(o.task.color)}">${ic(missed ? 'x' : 'quote')}</span>
+      <div class="grow"><h2>${missed ? 'Why didn’t it happen?' : 'Reflect to complete'}</h2><div class="muted ellipsis">${esc(o.task.title)} · ${M.fmtDay(o.day, { weekday: 'long', month: 'short', day: 'numeric' })}</div></div></div>
+    <div>${missed ? `Write at least ${min} words about why you didn’t or couldn’t do it. It’s marked as not done, not failed — this is for learning.` : `Write at least ${min} words before checking this off.`} Some prompts:<ul class="prompts">${prompts.map(p => `<li>${p}</li>`).join('')}</ul></div>
+    <textarea class="input" id="reflText" rows="7" placeholder="${missed ? 'What happened?' : 'How did it go?'}" autofocus data-min="${min}"></textarea></div>
     <div class="foot"><div class="progress" id="reflBar"><div style="width:0"></div></div><span class="small muted" id="reflCount">0 / ${min} words</span><span class="grow"></span>
       <button type="button" class="btn" data-act="${ctx === 'checkin' ? 'checkin-back' : 'close'}">Cancel</button>
-      <button class="btn primary" id="reflSubmit" disabled title="Ctrl/⌘ + Enter">${ic('check')} Submit & complete</button></div></form>`;
+      <button class="btn ${missed ? 'danger-solid' : 'primary'}" id="reflSubmit" disabled title="Ctrl/⌘ + Enter">${ic(missed ? 'x' : 'check')} ${missed ? 'Submit & mark not done' : 'Submit & complete'}</button></div></form>`;
 }
 
 function checkInDialog(m) {
-  const items = store.todayChecklist(), done = items.filter(o => o.done).length;
+  const items = store.todayChecklist(), done = items.filter(o => o.done).length, left = items.filter(o => !o.resolved).length;
   const upcoming = scheduleOn(new Date()).filter(e => !e.allDay && e.end > new Date()).map(e => ({ title: e.title, startDate: e.start, colorHex: e.color }));
   return `<div class="dialog"><div class="body">
     <div class="row" style="gap:14px"><span class="badge-icon" style="width:46px;height:46px;background:linear-gradient(135deg,#ffb340,#ff7a00)">${ic('sun')}</span>
-      <div class="grow"><h2>${esc(m.title)}</h2><div class="muted">${M.fmtDay(new Date())} · ${!items.length ? 'nothing scheduled' : done === items.length ? 'all done' : `${items.length - done} left`}</div></div>
+      <div class="grow"><h2>${esc(m.title)}</h2><div class="muted">${M.fmtDay(new Date())} · ${!items.length ? 'nothing scheduled' : done === items.length ? 'all done' : left ? `${left} left` : 'all settled'}</div></div>
       ${ring(done, items.length, 54, 6, 'checkin')}</div>
     ${done && done === items.length ? `<div class="green">${ic('check')} Everything is checked off. Nice work.</div>` : ''}
     <div class="card" style="max-height:340px;overflow:auto">${items.length ? items.map(o => crow(o, { ctx: 'checkin' })).join('') : '<div class="crow muted">Nothing on today’s checklist. Add something so future-you knows the plan.</div>'}</div>
@@ -866,12 +877,13 @@ function detailDialog(m) {
       <button class="btn" data-act="make-kind" data-task="${t.id}" data-kind="task" title="Put it on your checklist">${ic('list')} Make it a task</button>
       <button class="btn danger" data-act="delete-task" data-task="${t.id}">${t.source ? 'Hide' : 'Delete'}</button>`;
   } else if (it.kind === 'task') {
-    const o = it.o, t = o.task, r = store.reflectionFor(o);
+    const o = it.o, t = o.task, r = store.reflectionFor(o, o.missed ? 'missed' : 'done');
     body = `<div class="muted">${ic('cal')} ${M.fmtDay(o.day)}</div>
       <div class="muted">${ic('clock')} ${o.start ? `${M.fmtTime(o.start)} – ${M.fmtTime(o.end)}` : 'Any time'}</div>
       ${t.recurrence.frequency !== 'none' ? `<div class="muted">${ic('repeat')} ${esc(M.recurrenceSummary(t.recurrence, t.startDate))}</div>` : ''}
       ${t.notes ? `<div>${esc(t.notes)}</div>` : ''}<div class="small muted">${M.isBusy(t) ? 'Closed: blocks this time' : 'Open: just for info, you’re still free then'}</div>${r ? `<div class="muted" style="font-style:italic">“${esc(r.text)}”</div>` : ''}`;
     buttons = `${o.done ? `<button class="btn" data-act="toggle" data-occ="${esc(o.id)}">Mark not done</button>` : `<button class="btn primary" data-act="toggle" data-occ="${esc(o.id)}">Complete…</button>`}
+      ${o.missed ? `<button class="btn" data-act="miss" data-occ="${esc(o.id)}">Undo “didn’t do it”</button>` : o.done ? '' : `<button class="btn" data-act="miss" data-occ="${esc(o.id)}">${ic('x')} Didn’t do it…</button>`}
       <button class="btn" data-act="edit" data-task="${t.id}">Edit…</button>
       ${t.recurrence.frequency !== 'none' ? `<button class="btn" data-act="skip" data-occ="${esc(o.id)}">Skip</button>` : ''}
       ${t.source ? `<button class="btn" data-act="make-kind" data-task="${t.id}" data-kind="event" title="Take it off your checklist">${ic('cal')} Make it an event</button>` : ''}`;
@@ -1104,13 +1116,13 @@ function showBanner(c) {
     <div class="grow"><div class="row"><span class="k grow">CADENCE</span><span class="k">${M.fmtTime(new Date())}</span></div>
     <div class="t ellipsis">${esc(c.title)}</div><div class="b">${esc(c.body)}</div>
     <div class="row" style="justify-content:flex-end;margin-top:6px"><button class="btn sm" data-x>Dismiss</button>
-    <button class="btn sm primary" data-open>${c.occurrence && !c.occurrence.done ? 'Complete…' : 'Open checklist'}</button></div></div>`;
+    <button class="btn sm primary" data-open>${c.occurrence && !c.occurrence.resolved ? 'Complete…' : 'Open checklist'}</button></div></div>`;
   const remove = () => { el.classList.add('leaving'); setTimeout(() => el.remove(), 200); };
   el.querySelector('[data-x]').onclick = remove;
   el.querySelector('[data-open]').onclick = () => {
     remove();
     const occ = c.occurrence && findOcc(c.occurrence.id);
-    if (occ && !occ.done) beginReflection(occ); else navigate('today');
+    if (occ && !occ.resolved) beginReflection(occ); else navigate('today');
   };
   const box = $('#banners');
   box.prepend(el);
@@ -1120,9 +1132,9 @@ function showBanner(c) {
 }
 
 // ---------- actions ----------
-function beginReflection(o) {
+function beginReflection(o, mode = 'done') {
   const fresh = findOcc(o.id) ?? o;
-  openModal({ type: 'reflection', occ: fresh });
+  openModal({ type: 'reflection', occ: fresh, mode });
 }
 
 function newTaskAt(day, minutes) {
@@ -1146,8 +1158,22 @@ function toggleOcc(id, ctx) {
     toast(`Unchecked ${o.task.title} — the reflection stays saved`, { icon: 'circle' });
     return;
   }
-  if (ctx === 'checkin' && ui.modal?.type === 'checkin') { ui.modal.reflecting = o; renderModal(); return; }
+  if (ctx === 'checkin' && ui.modal?.type === 'checkin') { ui.modal.reflecting = o; ui.modal.reflectMode = 'done'; renderModal(); return; }
   beginReflection(o);
+}
+
+/** The X box: "didn't do it / couldn't", with a reflection on why. Clicking it again undoes it. */
+function missOcc(id, ctx) {
+  const o = findOcc(id);
+  if (!o) return;
+  if (o.missed) {
+    store.unmiss(o);
+    if (ui.modal?.type === 'detail') closeModal();
+    toast(`${o.task.title} is open again — the reflection stays saved`, { icon: 'circle' });
+    return;
+  }
+  if (ctx === 'checkin' && ui.modal?.type === 'checkin') { ui.modal.reflecting = o; ui.modal.reflectMode = 'missed'; renderModal(); return; }
+  beginReflection(o, 'missed');
 }
 
 function confirmThen(title, text, yes, fn) { openModal({ type: 'confirm', title, text, yes, fn }); }
@@ -1178,7 +1204,9 @@ const actions = {
   'edit-busy': el => { readEditorInputs(); ui.modal.draft.busy = el.dataset.busy === '1'; ui.modal.busyChosen = true; renderModal(); },
   'new-at': el => { const d = new Date(Number(el.dataset.at)); newTaskAt(d, Math.min(1435, Math.floor(M.minutesOf(d) / 5) * 5)); },
   edit: el => { const t = store.tasks.get(el.dataset.task); if (t) openEditor(t, false); },
+  'refl-filter': el => { ui.reflFilter = el.dataset.f; render(); },
   toggle: el => toggleOcc(el.dataset.occ, el.dataset.ctx),
+  miss: el => missOcc(el.dataset.occ, el.dataset.ctx),
   skip: el => {
     const o = findOcc(el.dataset.occ);
     if (!o) return;
@@ -1220,7 +1248,7 @@ const actions = {
     for (const r of store.sortedReflections()) {
       const k = M.dateKey(r.createdAt);
       if (k !== last) { md += `## ${M.fmtDay(r.createdAt, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}\n\n`; last = k; }
-      md += `### ${r.taskTitle} — ${M.fmtTime(r.createdAt)}\n\n${r.text}\n\n`;
+      md += `### ${r.taskTitle}${r.outcome === 'missed' ? ' (didn’t do it)' : ''} — ${M.fmtTime(r.createdAt)}\n\n${r.text}\n\n`;
     }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([md], { type: 'text/markdown' }));
@@ -1409,11 +1437,14 @@ document.addEventListener('submit', async e => {
     }
   } else if (kind === 'reflection') {
     const text = $('#reflText').value.trim();
-    const o = findOcc(form.dataset.occ);
-    if (!o || !store.complete(o, text)) return;
-    ui.justDone.add(o.id);
-    setTimeout(() => { ui.justDone.delete(o.id); }, 1200);
-    toast(`Checked off ${o.task.title} · reflection saved`, { icon: 'check', tone: 'good' });
+    const o = findOcc(form.dataset.occ), missed = form.dataset.mode === 'missed';
+    if (!o || !(missed ? store.miss(o, text) : store.complete(o, text))) return;
+    if (missed) toast(`Marked ${o.task.title} as not done · reflection saved`, { icon: 'x' });
+    else {
+      ui.justDone.add(o.id);
+      setTimeout(() => { ui.justDone.delete(o.id); }, 1200);
+      toast(`Checked off ${o.task.title} · reflection saved`, { icon: 'check', tone: 'good' });
+    }
     if (form.dataset.ctx === 'checkin') { ui.modal.reflecting = null; renderModal(); render(); } else closeModal();
   } else if (kind === 'delete-account') {
     const m = ui.modal;

@@ -8,12 +8,13 @@ struct CheckInView: View {
     let reason: String
     let onClose: () -> Void
     @State private var reflecting: Occurrence?
+    @State private var reflectingMissed = false
 
     var body: some View {
         Group {
             if let occ = reflecting {
-                ReflectionForm(occurrence: occ, minWords: store.settings.minReflectionWords) { text in
-                    store.complete(occ, reflection: text)
+                ReflectionForm(occurrence: occ, minWords: store.settings.minReflectionWords, missed: reflectingMissed) { text in
+                    if reflectingMissed { store.miss(occ, reflection: text) } else { store.complete(occ, reflection: text) }
                     withAnimation { reflecting = nil }
                 } onCancel: {
                     withAnimation { reflecting = nil }
@@ -29,6 +30,7 @@ struct CheckInView: View {
     private var checklist: some View {
         let items = store.todayChecklist()
         let done = items.filter(\.isDone).count
+        let left = items.filter { !$0.isResolved }.count
         let upcoming = schedule(on: Date(), store: store, google: google).filter { ($0.end ?? .distantPast) > Date() && $0.start != nil }
         return VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 14) {
@@ -40,7 +42,7 @@ struct CheckInView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(reason).font(.title2.bold())
                     Text(Date().formatted(.dateTime.weekday(.wide).month(.wide).day()) + " · "
-                         + (items.isEmpty ? "nothing scheduled" : done == items.count ? "all done" : "\(items.count - done) left"))
+                         + (items.isEmpty ? "nothing scheduled" : done == items.count ? "all done" : left == 0 ? "all settled" : "\(left) left"))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -62,9 +64,11 @@ struct CheckInView: View {
                     VStack(spacing: 0) {
                         ForEach(Array(items.enumerated()), id: \.element.id) { i, occ in
                             if i > 0 { Divider().padding(.leading, 42) }
-                            ChecklistRow(occ: occ) { o in
-                                if o.isDone { store.uncomplete(o) } else { withAnimation { reflecting = o } }
-                            }
+                            ChecklistRow(occ: occ, onToggle: { o in
+                                if o.isDone { store.uncomplete(o) } else { withAnimation { reflectingMissed = false; reflecting = o } }
+                            }, onMiss: { o in
+                                if o.isMissed { store.unmiss(o) } else { withAnimation { reflectingMissed = true; reflecting = o } }
+                            })
                         }
                     }
                     .padding(.horizontal, 14)

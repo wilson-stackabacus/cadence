@@ -1,7 +1,7 @@
 // Data model shared with the Mac app. Records use the exact JSON the Swift app encodes:
 //   PlanTask   { id, title, notes, startDate (ISO, start of local day), timeMinutes?, durationMinutes,
 //                recurrence: { frequency, interval, weekdays[1=Sun..7], end: {never:{}} | {onDate:{_0:ISO}} | {afterCount:{_0:n}} },
-//                reminderOffsets[], channels[], color, completions{ 'yyyy-MM-dd': ISO }, skipped[], googleEventID?, createdAt, updatedAt? }
+//                reminderOffsets[], channels[], color, completions{ 'yyyy-MM-dd': ISO }, missed?{ 'yyyy-MM-dd': ISO }, skipped[], googleEventID?, createdAt, updatedAt? }
 //   Reflection { id, taskID, taskTitle, occurrenceKey, text, createdAt }
 // Dates are ISO-8601 *without* milliseconds, because Swift's .iso8601 decoder rejects them.
 
@@ -27,6 +27,8 @@ export function eventNotes(description, location) {
   return text || String(location || '').trim();
 }
 
+/** Checked off or marked "didn't do" at least once (imports never hide items with history). */
+export const hasHistory = task => Object.keys(task.completions || {}).length > 0 || Object.keys(task.missed || {}).length > 0;
 export const isSilent = task => !(task.channels && task.channels.length);
 /** Events live on the calendars only: never on the checklist, no check-off, no reflection.
  *  Imported items (Google, Calendly) are events unless you explicitly make them a task. */
@@ -187,15 +189,19 @@ export function makeOccurrence(task, day) {
   const d = startOfDay(day);
   const key = dateKey(d);
   const start = task.timeMinutes != null ? dayAt(d, task.timeMinutes) : null;
+  const event = isEvent(task);
+  const done = !event && Boolean(task.completions && task.completions[key]);
+  // "Didn't do it": marked with the X box and a reflection on why. Settles the item like a check-off.
+  const missed = !event && !done && Boolean(task.missed && task.missed[key]);
   return {
     task, day: d, key,
     id: `${task.id}|${key}`,
     start,
     end: start ? addMinutes(start, Math.max(5, task.durationMinutes || 30)) : null,
-    event: isEvent(task),
+    event,
     busy: isBusy(task),
-    done: !isEvent(task) && Boolean(task.completions && task.completions[key]),
-    overdue: !isEvent(task) && !(task.completions && task.completions[key]) && d < startOfDay(new Date()),
+    done, missed, resolved: done || missed,
+    overdue: !event && !done && !missed && d < startOfDay(new Date()),
   };
 }
 

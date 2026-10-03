@@ -175,6 +175,8 @@ struct PlanTask: Codable, Identifiable, Hashable {
     var color: TaskColor = .blue
     /// Occurrence day key ("yyyy-MM-dd") → completion time.
     var completions: [String: Date] = [:]
+    /// Occurrence day key → when you marked it "didn't do it" (the X box, with a reflection on why).
+    var missed: [String: Date]?
     /// Occurrence day keys the user chose to skip.
     var skipped: Set<String> = []
     var googleEventID: String?
@@ -202,6 +204,8 @@ struct PlanTask: Codable, Identifiable, Hashable {
     /// Events live on the calendars only: never on the checklist, no check-off, no reflection.
     var isEvent: Bool { kind == "event" || (kind != "task" && source != nil) }
     var isBusy: Bool { busy ?? isEvent }
+    /// Checked off or marked "didn't do" at least once (imports never hide items with history).
+    var hasHistory: Bool { !completions.isEmpty || !(missed ?? [:]).isEmpty }
 }
 
 /// One concrete instance of a (possibly repeating) task on a given day.
@@ -216,7 +220,10 @@ struct Occurrence: Identifiable, Hashable {
     var isEvent: Bool { task.isEvent }
     var isBusy: Bool { task.isBusy }
     var isDone: Bool { !task.isEvent && task.completions[key] != nil }
-    var isOverdue: Bool { !task.isEvent && !isDone && day < Date().startOfDay }
+    /// "Didn't do it / couldn't": settles the item like a check-off, without counting as done.
+    var isMissed: Bool { !task.isEvent && !isDone && task.missed?[key] != nil }
+    var isResolved: Bool { isDone || isMissed }
+    var isOverdue: Bool { !task.isEvent && !isResolved && day < Date().startOfDay }
 }
 
 // MARK: - Reflections
@@ -229,8 +236,11 @@ struct Reflection: Codable, Identifiable, Hashable {
     var text: String
     var createdAt = Date()
     var updatedAt: Date?
+    /// nil = written when checking it off; "missed" = why it didn't happen.
+    var outcome: String?
 
     var wordCount: Int { countWords(text) }
+    var isMissed: Bool { outcome == "missed" }
 }
 
 // MARK: - Open hours (Booking)

@@ -69,8 +69,8 @@ struct RootView: View {
                 .background(Color(nsColor: .windowBackgroundColor))
         }
         .sheet(item: $model.reflectionTarget) { occ in
-            ReflectionForm(occurrence: occ, minWords: store.settings.minReflectionWords) { text in
-                store.complete(occ, reflection: text)
+            ReflectionForm(occurrence: occ, minWords: store.settings.minReflectionWords, missed: model.reflectionMissed) { text in
+                if model.reflectionMissed { store.miss(occ, reflection: text) } else { store.complete(occ, reflection: text) }
                 model.reflectionTarget = nil
             } onCancel: {
                 model.reflectionTarget = nil

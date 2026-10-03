@@ -73,7 +73,7 @@ struct TodoView: View {
         let today = Date().startOfDay
         let days = (0..<range.rawValue).map { today.adding(days: $0) }
         let groups = days.map { day in
-            (day, store.checklist(on: day).filter { matches($0.task.title) && (showCompleted || !$0.isDone) })
+            (day, store.checklist(on: day).filter { matches($0.task.title) && (showCompleted || !$0.isResolved) })
         }.filter { !$0.1.isEmpty }
         if groups.isEmpty && overdue.isEmpty {
             emptyState
@@ -188,7 +188,7 @@ private struct TaskDefinitionRow: View {
                     if let next = task.nextOccurrence() {
                         Label("Next: " + next.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()),
                               systemImage: "arrow.forward.circle")
-                    } else if !task.recurrence.isRepeating && task.completions.isEmpty && task.startDate.startOfDay < Date().startOfDay {
+                    } else if !task.recurrence.isRepeating && !task.hasHistory && task.startDate.startOfDay < Date().startOfDay {
                         Label("Overdue", systemImage: "exclamationmark.circle").foregroundStyle(.red)
                     } else if !task.completions.isEmpty {
                         Label("Done", systemImage: "checkmark.circle").foregroundStyle(.green)

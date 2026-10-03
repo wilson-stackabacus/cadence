@@ -204,7 +204,7 @@ final class CalendarImporter: ObservableObject {
                 var archive = Set(cancelled.map { stableUUID("google:\($0)") })
                 // Events we imported earlier that no longer appear in the window: moved or deleted. Ask Google.
                 let seen = Set(items.map(\.id)).union(archive)
-                let stale = store.tasks.filter { $0.source == "google" && $0.archived != true && $0.completions.isEmpty
+                let stale = store.tasks.filter { $0.source == "google" && $0.archived != true && !$0.hasHistory
                     && !seen.contains($0.id) && $0.startDate >= from && $0.startDate < to && $0.googleEventID != nil }
                 for t in stale.prefix(25) {
                     if let ev = try? await google.fetchEvent(calendarID: t.sourceCalendar ?? "primary", eventID: t.googleEventID!) {

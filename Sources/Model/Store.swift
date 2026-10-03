@@ -248,7 +248,7 @@ final class Store: ObservableObject {
     /// One-off tasks from earlier days that were never checked off.
     func overdue(today: Date = Date()) -> [Occurrence] {
         let t = today.startOfDay
-        return tasks.filter { $0.archived != true && !$0.isEvent && !$0.recurrence.isRepeating && $0.startDate.startOfDay < t && $0.completions.isEmpty }
+        return tasks.filter { $0.archived != true && !$0.isEvent && !$0.recurrence.isRepeating && $0.startDate.startOfDay < t && !$0.hasHistory }
             .map { Occurrence(task: $0, day: $0.startDate.startOfDay) }
             .sorted { $0.day < $1.day }
     }
@@ -261,7 +261,7 @@ final class Store: ObservableObject {
 
     func todayChecklist() -> [Occurrence] { overdue() + checklist(on: Date()) }
 
-    var remainingToday: Int { todayChecklist().filter { !$0.isDone }.count }
+    var remainingToday: Int { todayChecklist().filter { !$0.isResolved }.count }
 
     static func order(_ a: Occurrence, _ b: Occurrence) -> Bool {
         switch (a.task.timeMinutes, b.task.timeMinutes) {
@@ -272,8 +272,9 @@ final class Store: ObservableObject {
         }
     }
 
-    func reflection(for occ: Occurrence) -> Reflection? {
-        reflections.first { $0.taskID == occ.task.id && $0.occurrenceKey == occ.key }
+    /// The check-off reflection, or with `missed` the "why it didn't happen" one.
+    func reflection(for occ: Occurrence, missed: Bool = false) -> Reflection? {
+        reflections.first { $0.taskID == occ.task.id && $0.occurrenceKey == occ.key && $0.isMissed == missed }
     }
 
     /// Consecutive days (ending today or yesterday) with at least one reflection.
@@ -324,7 +325,7 @@ final class Store: ObservableObject {
                 list.append(item); added += 1
             }
         }
-        for i in list.indices where list[i].source == source && list[i].archived != true && list[i].completions.isEmpty {
+        for i in list.indices where list[i].source == source && list[i].archived != true && !list[i].hasHistory {
             let missing = archiveMissing && !incoming.contains(list[i].id)
                 && list[i].startDate >= from.startOfDay && list[i].startDate < to
             if missing || archiveIDs.contains(list[i].id) { list[i].archived = true; removed += 1 }
@@ -338,8 +339,27 @@ final class Store: ObservableObject {
         guard countWords(text) >= settings.minReflectionWords,
               let i = tasks.firstIndex(where: { $0.id == occ.task.id }) else { return }
         tasks[i].completions[occ.key] = Date()
+        tasks[i].missed?[occ.key] = nil
         reflections.insert(Reflection(taskID: occ.task.id, taskTitle: occ.task.title,
                                       occurrenceKey: occ.key, text: text), at: 0)
+    }
+
+    /// "Didn't do it / couldn't": settles the item without checking it off, with a reflection on why.
+    func miss(_ occ: Occurrence, reflection text: String) {
+        guard countWords(text) >= settings.minReflectionWords,
+              let i = tasks.firstIndex(where: { $0.id == occ.task.id }) else { return }
+        var t = tasks[i]
+        t.completions[occ.key] = nil
+        t.missed = (t.missed ?? [:]).merging([occ.key: Date()]) { $1 }
+        tasks[i] = t
+        reflections.insert(Reflection(taskID: occ.task.id, taskTitle: occ.task.title,
+                                      occurrenceKey: occ.key, text: text, outcome: "missed"), at: 0)
+    }
+
+    /// Undoing "didn't do it" keeps the reflection, like unchecking.
+    func unmiss(_ occ: Occurrence) {
+        guard let i = tasks.firstIndex(where: { $0.id == occ.task.id }) else { return }
+        tasks[i].missed?[occ.key] = nil
     }
 
     /// Unchecking keeps the reflection: it is part of the record.

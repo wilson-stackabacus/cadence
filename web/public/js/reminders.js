@@ -90,7 +90,7 @@ export class Reminders {
     for (const off of [-1, 0, 1]) {
       const day = M.addDays(M.startOfDay(new Date()), off);
       for (const occ of store.occurrencesOn(day)) {
-        if (occ.done || M.isSilent(occ.task)) continue;
+        if (occ.resolved || M.isSilent(occ.task)) continue;
         const base = occ.start ?? M.dayAt(day, s.untimedReminderMinutes);
         for (const o of [...(occ.task.reminderOffsets || [])].sort((a, b) => a - b)) {
           if (!due(M.addMinutes(base, -o), `${occ.id}|${o}`)) continue;
@@ -110,7 +110,7 @@ export class Reminders {
 
     if (s.nudgeEnabled && now - this.lastNudge >= s.nudgeIntervalMinutes * 60_000) {
       this.lastNudge = now;
-      const open = store.todayChecklist().filter(o => !o.done && !M.isSilent(o.task));
+      const open = store.todayChecklist().filter(o => !o.resolved && !M.isSilent(o.task));
       if (open.length || !s.nudgeOnlyWhenIncomplete) {
         const names = open.slice(0, 3).map(o => o.task.title).join(', ') + (open.length > 3 ? ` +${open.length - 3} more` : '');
         this.deliver(open.length

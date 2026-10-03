@@ -115,7 +115,7 @@ final class BannerCenter {
         let view = BannerView(content: content,
                               onOpen: { [weak self, weak panel] in
                                   if let panel { self?.dismiss(panel) }
-                                  if let occ = content.occurrence, !occ.isDone {
+                                  if let occ = content.occurrence, !occ.isResolved {
                                       AppModel.shared.beginReflection(occ)
                                   } else {
                                       AppModel.shared.openChecklist()
@@ -187,7 +187,7 @@ struct BannerView: View {
                 HStack(spacing: 8) {
                     Spacer()
                     Button("Dismiss", action: onDismiss).controlSize(.small)
-                    Button(content.occurrence.map { $0.isDone ? "Open checklist" : "Complete…" } ?? "Open checklist",
+                    Button(content.occurrence.map { $0.isResolved ? "Open checklist" : "Complete…" } ?? "Open checklist",
                            action: onOpen)
                         .controlSize(.small)
                         .buttonStyle(.borderedProminent)

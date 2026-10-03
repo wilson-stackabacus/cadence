@@ -124,6 +124,33 @@ struct CheckButton: View {
     }
 }
 
+/// The X box next to the check: "didn't do it / couldn't", answered with a reflection on why.
+struct MissButton: View {
+    let missed: Bool
+    var dimmed = false
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+                .fill(missed ? Color.red : .clear)
+                .overlay(RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+                    .strokeBorder(missed || hovering ? Color.red : Color.secondary.opacity(0.7), lineWidth: 1.5))
+                .overlay(Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(missed ? Color.white : hovering ? Color.red : .clear))
+                .frame(width: 17, height: 17)
+                .scaleEffect(hovering ? 1.08 : 1)
+                .animation(.easeOut(duration: 0.12), value: hovering)
+                .animation(.spring(duration: 0.25), value: missed)
+        }
+        .buttonStyle(.plain)
+        .opacity(dimmed ? 0.35 : 1)
+        .onHover { hovering = $0 }
+        .help(missed ? "Undo “didn't do it”" : "Didn't do it / couldn't — you'll reflect on why")
+    }
+}
+
 struct ChecklistRow: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var store: Store
@@ -132,21 +159,26 @@ struct ChecklistRow: View {
     var showDate = false
     /// Defaults to the main-window behaviour (reflection sheet).
     var onToggle: ((Occurrence) -> Void)?
+    var onMiss: ((Occurrence) -> Void)?
 
     var body: some View {
         HStack(spacing: 10) {
             CheckButton(done: occ.isDone, color: occ.task.color.color) {
                 if let onToggle { onToggle(occ) } else { model.toggle(occ) }
             }
+            MissButton(missed: occ.isMissed, dimmed: occ.isDone) {
+                if let onMiss { onMiss(occ) } else { model.toggleMissed(occ) }
+            }
             if !compact {
                 RoundedRectangle(cornerRadius: 2).fill(occ.task.color.color).frame(width: 3, height: 30)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(occ.task.title)
-                    .strikethrough(occ.isDone)
-                    .foregroundStyle(occ.isDone ? .secondary : .primary)
+                    .strikethrough(occ.isResolved, color: occ.isMissed ? .red : nil)
+                    .foregroundStyle(occ.isResolved ? .secondary : .primary)
                     .lineLimit(1)
                 HStack(spacing: 8) {
+                    if occ.isMissed { Text("Didn't do it").foregroundStyle(.red).fontWeight(.semibold) }
                     if showDate || occ.isOverdue {
                         Text(occ.day.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
                             .foregroundStyle(occ.isOverdue ? .red : .secondary)
@@ -170,7 +202,7 @@ struct ChecklistRow: View {
                 .labelStyle(CompactLabelStyle())
             }
             Spacer(minLength: 4)
-            if occ.isDone && store.reflection(for: occ) != nil {
+            if occ.isResolved && store.reflection(for: occ, missed: occ.isMissed) != nil {
                 Image(systemName: "text.quote").foregroundStyle(.secondary).help("Reflection saved")
             }
         }
@@ -197,6 +229,11 @@ struct OccurrenceMenu: View {
         } else {
             Button("Complete with reflection…") { model.beginReflection(occ) }
         }
+        if occ.isMissed {
+            Button("Undo “didn't do it”") { store.unmiss(occ) }
+        } else if !occ.isDone {
+            Button("Didn't do it… (reflect on why)") { model.beginReflection(occ, missed: true) }
+        }
         Button("Edit task…") { model.edit(occ.task) }
         if occ.task.recurrence.isRepeating {
             Button("Skip this occurrence") { store.skip(occ) }
@@ -211,6 +248,8 @@ struct OccurrenceMenu: View {
 struct ReflectionForm: View {
     let occurrence: Occurrence
     let minWords: Int
+    /// "Didn't do it": asks why it didn't happen instead of how it went.
+    var missed = false
     let onSubmit: (String) -> Void
     let onCancel: () -> Void
 
@@ -224,6 +263,13 @@ struct ReflectionForm: View {
         "How did this move you toward a bigger goal?",
         "What did you learn about how you work?",
     ]
+    private static let missedPrompts = [
+        "What got in the way?",
+        "Was it in your control, or not?",
+        "What would make it happen next time?",
+        "Was it still the right thing to plan, or should it change?",
+        "How do you feel about skipping it?",
+    ]
 
     private var count: Int { countWords(text) }
     private var ready: Bool { count >= minWords }
@@ -231,13 +277,13 @@ struct ReflectionForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
-                Image(systemName: "text.quote")
+                Image(systemName: missed ? "xmark" : "text.quote")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 38, height: 38)
-                    .background(Circle().fill(occurrence.task.color.color.gradient))
+                    .background(Circle().fill(missed ? Color.red.gradient : occurrence.task.color.color.gradient))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Reflect to complete").font(.title3.bold())
+                    Text(missed ? "Why didn't it happen?" : "Reflect to complete").font(.title3.bold())
                     Text("\(occurrence.task.title) · \(occurrence.day.formatted(.dateTime.weekday(.wide).month().day()))")
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -245,7 +291,8 @@ struct ReflectionForm: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Write at least \(minWords) words before checking this off. Some prompts:")
+                Text(missed ? "Write at least \(minWords) words about why you didn't or couldn't do it. It's marked as not done, not failed — this is for learning. Some prompts:"
+                            : "Write at least \(minWords) words before checking this off. Some prompts:")
                     .font(.callout)
                 ForEach(promptsFor(occurrence), id: \.self) { p in
                     Label(p, systemImage: "circle.fill").labelStyle(BulletLabelStyle())
@@ -260,7 +307,7 @@ struct ReflectionForm: View {
                     .padding(8)
                     .focused($focused)
                 if text.isEmpty {
-                    Text("How did it go?")
+                    Text(missed ? "What happened?" : "How did it go?")
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 13)
                         .padding(.vertical, 8)
@@ -284,10 +331,11 @@ struct ReflectionForm: View {
                 Button {
                     onSubmit(text.trimmingCharacters(in: .whitespacesAndNewlines))
                 } label: {
-                    Label("Submit & complete", systemImage: "checkmark")
+                    Label(missed ? "Submit & mark not done" : "Submit & complete", systemImage: missed ? "xmark" : "checkmark")
                 }
                 .keyboardShortcut(.return, modifiers: .command)
                 .buttonStyle(.borderedProminent)
+                .tint(missed ? .red : .accentColor)
                 .disabled(!ready)
                 .help(ready ? "⌘↩ to submit" : "Write \(minWords - count) more word\(minWords - count == 1 ? "" : "s")")
             }
@@ -300,8 +348,9 @@ struct ReflectionForm: View {
     /// Stable per task, so the prompts don't jump around while typing.
     private func promptsFor(_ occ: Occurrence) -> [String] {
         let seed = abs(occ.task.id.hashValue ^ occ.key.hashValue)
-        let start = seed % Self.prompts.count
-        return (0..<3).map { Self.prompts[(start + $0) % Self.prompts.count] }
+        let pool = missed ? Self.missedPrompts : Self.prompts
+        let start = seed % pool.count
+        return (0..<3).map { pool[(start + $0) % pool.count] }
     }
 }
 
@@ -349,6 +398,10 @@ enum CalendarItem: Identifiable, Hashable {
         case .task(let o): return o.task.color.color
         case .google(let e): return e.color
         }
+    }
+    var isMissed: Bool {
+        if case .task(let o) = self { return o.isMissed }
+        return false
     }
     var isDone: Bool {
         if case .task(let o) = self { return o.isDone }

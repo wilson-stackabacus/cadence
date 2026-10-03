@@ -143,6 +143,22 @@ main { overflow: auto; min-width: 0; }
 .crow .meta span { display: inline-flex; align-items: center; gap: 3px; }
 .checkbtn { border: 0; background: none; padding: 0; cursor: pointer; font-size: 21px; color: var(--faint); display: inline-flex; }
 .checkbtn:hover { color: var(--muted); }
+/* The X box: "didn't do it / couldn't". A rounded square next to the round check, so the two read as a pair. */
+.missbtn { flex: none; width: 19px; height: 19px; margin-left: -4px; border-radius: 5px; border: 1.6px solid var(--faint); background: none;
+  color: transparent; display: inline-grid; place-items: center; padding: 0; cursor: pointer; font-size: 12px;
+  transition: color .15s, border-color .15s, background-color .15s, transform .12s; }
+.missbtn:hover { border-color: var(--red); color: var(--red); transform: scale(1.08); }
+.missbtn.on { background: var(--red); border-color: var(--red); color: #fff; }
+.crow.done .missbtn { opacity: .35; }
+.crow.missed .title { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--red); }
+.chip.missed, .block.missed { opacity: .55; }
+.chip.missed span:last-child, .block.missed b { text-decoration: line-through; text-decoration-color: var(--red); }
+.btn.danger-solid { background: var(--red); border-color: var(--red); color: #fff; }
+.btn.danger-solid:disabled { opacity: .5; }
+.tag-done, .tag-missed { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
+.tag-done { color: var(--green); background: color-mix(in srgb, var(--green) 14%, transparent); }
+.tag-missed { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
+.card.refl.missed { border-left: 3px solid var(--red); }
 .crow .actions { opacity: 0; transition: opacity .1s; display: flex; gap: 2px; }
 .crow:hover .actions, .crow:focus-within .actions { opacity: 1; }
 @media (hover: none) { .crow .actions { opacity: 1; } }

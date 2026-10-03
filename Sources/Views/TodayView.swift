@@ -13,6 +13,7 @@ struct TodayView: View {
         let overdue = store.overdue()
         let all = overdue + items
         let done = all.filter(\.isDone).count
+        let settled = all.filter(\.isResolved).count
         let events = schedule(on: today, store: store, google: google)
 
         ScrollView {
@@ -22,7 +23,7 @@ struct TodayView: View {
                         Text(greeting).font(.title3).foregroundStyle(.secondary)
                         Text(today.formatted(.dateTime.weekday(.wide).month(.wide).day()))
                             .font(.largeTitle.bold())
-                        Text(statusLine(done: done, total: all.count))
+                        Text(statusLine(done: done, settled: settled, total: all.count))
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -134,10 +135,11 @@ struct TodayView: View {
         }
     }
 
-    private func statusLine(done: Int, total: Int) -> String {
+    private func statusLine(done: Int, settled: Int, total: Int) -> String {
         if total == 0 { return "A clear day." }
         if done == total { return "Everything is checked off. Nice work." }
-        return "\(total - done) of \(total) left to check off."
+        if settled == total { return "All settled: \(done) done, \(total - done) not done." }
+        return "\(total - settled) of \(total) left to check off."
     }
 
     private func addQuick() {

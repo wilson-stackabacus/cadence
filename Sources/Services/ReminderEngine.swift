@@ -132,7 +132,7 @@ final class ReminderEngine: ObservableObject {
         // Task reminders (tomorrow included, for "1 day before" reminders).
         for offset in -1...1 {
             let day = now.startOfDay.adding(days: offset)
-            for occ in store.occurrences(on: day) where !occ.isDone && !occ.task.isSilent {
+            for occ in store.occurrences(on: day) where !occ.isResolved && !occ.task.isSilent {
                 let base = occ.start ?? dayAt(day, minutes: s.untimedReminderMinutes)
                 for off in occ.task.reminderOffsets.sorted() where due(base.adding(minutes: -off), "\(occ.id)|\(off)") {
                     model.notifier.deliver(reminderContent(occ, offset: off), channels: occ.task.channels)
@@ -157,7 +157,7 @@ final class ReminderEngine: ObservableObject {
         if s.nudgeEnabled && !screenLocked && !displayAsleep
             && now.timeIntervalSince(lastNudge) >= Double(s.nudgeIntervalMinutes * 60) {
             lastNudge = now
-            let open = store.todayChecklist().filter { !$0.isDone && !$0.task.isSilent }
+            let open = store.todayChecklist().filter { !$0.isResolved && !$0.task.isSilent }
             if !open.isEmpty || !s.nudgeOnlyWhenIncomplete {
                 model.notifier.deliver(nudgeContent(open), channels: s.nudgeChannels)
             }

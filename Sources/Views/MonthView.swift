@@ -119,8 +119,8 @@ private struct MiniChip: View {
                     .overlay(Circle().strokeBorder(item.color, lineWidth: 1))
             }
             Text(item.title).font(.system(size: 10.5)).lineLimit(1)
-                .strikethrough(item.isDone)
-                .foregroundStyle(item.isDone ? .secondary : .primary)
+                .strikethrough(item.isDone || item.isMissed, color: item.isMissed ? .red : nil)
+                .foregroundStyle(item.isDone || item.isMissed ? .secondary : .primary)
         }
         .padding(.horizontal, 3)
         .padding(.vertical, 1)

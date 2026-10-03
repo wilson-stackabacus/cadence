@@ -5,9 +5,12 @@ struct ReflectionsView: View {
     @EnvironmentObject private var store: Store
     @State private var search = ""
     @State private var toDelete: Reflection?
+    /// nil = all, false = done, true = "didn't do it".
+    @State private var showMissed: Bool?
 
     private var filtered: [Reflection] {
         store.reflections
+            .filter { showMissed == nil || $0.isMissed == showMissed }
             .filter { search.isEmpty || $0.text.localizedCaseInsensitiveContains(search) || $0.taskTitle.localizedCaseInsensitiveContains(search) }
             .sorted { $0.createdAt > $1.createdAt }
     }
@@ -16,7 +19,7 @@ struct ReflectionsView: View {
         let groups = Dictionary(grouping: filtered) { $0.createdAt.startOfDay }
             .sorted { $0.key > $1.key }
         VStack(spacing: 0) {
-            ScreenHeader(title: "Reflections", subtitle: "A record of what you wrote each time you checked something off.") {
+            ScreenHeader(title: "Reflections", subtitle: "A record of what you wrote each time you checked something off, or didn't get to it.") {
                 Button { export() } label: { Label("Export…", systemImage: "square.and.arrow.up") }
                     .disabled(store.reflections.isEmpty)
             }
@@ -27,10 +30,20 @@ struct ReflectionsView: View {
                 stat("\(Set(store.reflections.map(\.taskID)).count)", "different tasks", "square.stack", .green)
             }
             .padding(.horizontal, 22)
-            TextField("Search reflections", text: $search)
-                .textFieldStyle(.roundedBorder)
-                .padding(.horizontal, 22)
-                .padding(.vertical, 12)
+            HStack(spacing: 12) {
+                Picker("Show", selection: $showMissed) {
+                    Text("All").tag(Bool?.none)
+                    Text("Done").tag(Bool?.some(false))
+                    Text("Didn't do (\(store.reflections.filter(\.isMissed).count))").tag(Bool?.some(true))
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                TextField("Search reflections", text: $search)
+                    .textFieldStyle(.roundedBorder)
+            }
+            .padding(.horizontal, 22)
+            .padding(.vertical, 12)
             Divider()
             if store.reflections.isEmpty {
                 VStack(spacing: 10) {
@@ -60,7 +73,7 @@ struct ReflectionsView: View {
         .confirmationDialog("Delete this reflection?", isPresented: Binding(get: { toDelete != nil }, set: { if !$0 { toDelete = nil } })) {
             Button("Delete", role: .destructive) { if let r = toDelete { store.deleteReflection(r.id) }; toDelete = nil }
         } message: {
-            Text("The task stays checked off. This can't be undone.")
+            Text("The task keeps its checked-off or not-done mark. This can't be undone.")
         }
     }
 
@@ -85,6 +98,11 @@ struct ReflectionsView: View {
                 HStack(spacing: 8) {
                     Circle().fill(color).frame(width: 8, height: 8)
                     Text(r.taskTitle).font(.callout.weight(.semibold))
+                    Label(r.isMissed ? "Didn't do it" : "Done", systemImage: r.isMissed ? "xmark" : "checkmark")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(r.isMissed ? Color.red : Color.green)
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(Capsule().fill((r.isMissed ? Color.red : Color.green).opacity(0.14)))
                     if let d = DateKey.date(r.occurrenceKey), !d.isSameDay(r.createdAt) {
                         Text("for \(d.formatted(.dateTime.month(.abbreviated).day()))").font(.caption).foregroundStyle(.secondary)
                     }
@@ -93,6 +111,9 @@ struct ReflectionsView: View {
                 }
                 Text(r.text).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             }
+        }
+        .overlay(alignment: .leading) {
+            if r.isMissed { RoundedRectangle(cornerRadius: 2).fill(Color.red).frame(width: 3).padding(.vertical, 6) }
         }
         .contextMenu {
             Button("Copy text") {
@@ -113,7 +134,7 @@ struct ReflectionsView: View {
         for (day, items) in groups {
             out += "## \(day.formatted(.dateTime.weekday(.wide).month(.wide).day().year()))\n\n"
             for r in items.sorted(by: { $0.createdAt > $1.createdAt }) {
-                out += "### \(r.taskTitle) — \(timeString(r.createdAt))\n\n\(r.text)\n\n"
+                out += "### \(r.taskTitle)\(r.isMissed ? " (didn't do it)" : "") — \(timeString(r.createdAt))\n\n\(r.text)\n\n"
             }
         }
         try? out.write(to: url, atomically: true, encoding: .utf8)

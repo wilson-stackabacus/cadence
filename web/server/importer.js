@@ -64,7 +64,7 @@ export async function importGoogle(userId) {
   const existing = new Map(rows.map(r => [r.id, JSON.parse(r.data)]));
   // Imported earlier but missing from the window now: moved or deleted. Ask Google about each.
   const seen = new Set([...items.map(i => i.id), ...archive]);
-  const stale = [...existing.values()].filter(t => t.source === 'google' && !t.archived && !Object.keys(t.completions || {}).length
+  const stale = [...existing.values()].filter(t => t.source === 'google' && !t.archived && !Object.keys(t.completions || {}).length && !Object.keys(t.missed || {}).length
     && !seen.has(t.id) && new Date(t.startDate) >= from && new Date(t.startDate) < to && t.googleEventID).slice(0, 25);
   for (const t of stale) {
     const e = await google.eventById(userId, t.sourceCalendar || 'primary', t.googleEventID).catch(() => undefined);
@@ -86,7 +86,7 @@ export async function importGoogle(userId) {
   }
   for (const id of archive) {
     const cur = existing.get(id);
-    if (cur && !cur.archived && !Object.keys(cur.completions || {}).length) {
+    if (cur && !cur.archived && !Object.keys(cur.completions || {}).length && !Object.keys(cur.missed || {}).length) {
       changes.push({ kind: 'task', id, updatedAt: now, data: { ...cur, archived: true, updatedAt: stamp } }); removed++;
     }
   }

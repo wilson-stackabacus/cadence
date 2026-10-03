@@ -8,11 +8,12 @@ struct MenuBarView: View {
     var body: some View {
         let items = store.todayChecklist()
         let done = items.filter(\.isDone).count
+        let left = items.filter { !$0.isResolved }.count
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Today").font(.headline)
-                    Text(items.isEmpty ? "Nothing scheduled" : done == items.count ? "All done" : "\(items.count - done) of \(items.count) left")
+                    Text(items.isEmpty ? "Nothing scheduled" : done == items.count ? "All done" : left == 0 ? "All settled" : "\(left) of \(items.count) left")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()

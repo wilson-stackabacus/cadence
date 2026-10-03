@@ -76,7 +76,7 @@ struct WeekView: View {
                         .foregroundStyle(isToday ? .white : .primary)
                         .frame(width: 30, height: 30)
                         .background(Circle().fill(isToday ? Color.accentColor : .clear))
-                    let open = store.checklist(on: day).filter { !$0.isDone }.count
+                    let open = store.checklist(on: day).filter { !$0.isResolved }.count
                     Text(open > 0 ? "\(open) open" : " ")
                         .font(.system(size: 9)).foregroundStyle(.secondary)
                 }
@@ -234,15 +234,17 @@ struct TimedBlock: View {
                     Image(systemName: "calendar").font(.system(size: 8, weight: .bold))
                 } else if item.isDone {
                     Image(systemName: "checkmark.circle.fill").font(.system(size: 9))
+                } else if item.isMissed {
+                    Image(systemName: "xmark.square.fill").font(.system(size: 9)).foregroundStyle(.red)
                 }
                 Text(item.title).font(.system(size: 11, weight: .semibold)).lineLimit(2)
-                    .strikethrough(item.isDone)
+                    .strikethrough(item.isDone || item.isMissed, color: item.isMissed ? .red : nil)
             }
             if let s = item.start {
                 Text(timeString(s)).font(.system(size: 10)).opacity(0.75)
             }
         }
-        .foregroundStyle(item.isDone ? Color.secondary : Color.primary)
+        .foregroundStyle(item.isDone || item.isMissed ? Color.secondary : Color.primary)
         .padding(.leading, 6)
         .padding(.trailing, 3)
         .padding(.vertical, 3)

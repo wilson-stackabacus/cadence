@@ -12,7 +12,7 @@ struct HomeView: View {
     var body: some View {
         let now = Date()
         let items = store.todayChecklist()
-        let open = items.filter { !$0.isDone }
+        let open = items.filter { !$0.isResolved }
         let done = items.count - open.count
         let overdue = store.overdue().count
         ScrollView {
@@ -118,7 +118,7 @@ struct HomeView: View {
 
     private func upNextCard(now: Date) -> some View {
         let tasks = (store.occurrences(on: now) + store.occurrences(on: now.adding(days: 1)))
-            .filter { !$0.isDone && ($0.start ?? .distantPast) > now }
+            .filter { !$0.isResolved && ($0.start ?? .distantPast) > now }
             .map { (title: $0.task.title, at: $0.start!, color: $0.task.color.color) }
         let events = google.events(on: now).filter { !$0.isAllDay && $0.start > now }
             .map { (title: $0.title, at: $0.start, color: $0.color) }
